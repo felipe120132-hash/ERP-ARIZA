@@ -1,0 +1,48 @@
+﻿import React from 'react';
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import { Navbar } from './components/layout/Navbar';
+import { Sidebar } from './components/layout/Sidebar';
+import Login from './pages/Login';
+import Catalogo from './pages/Catalogo';
+import CrearPedido from './pages/CrearPedido';
+import Cartera from './pages/Cartera';
+import Gastos from './pages/Gastos';
+import Dashboard from './pages/Dashboard';
+import './styles/App.css';
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <div className="app-container">
+          <Navbar />
+          <div className="app-body">
+            <Sidebar />
+            <main className="app-content">
+              <nav style={{ display: 'flex', gap: '1rem', padding: '1rem 0' }}>
+                <Link to="/dashboard">Dashboard</Link>
+                <Link to="/catalogo">Catálogo</Link>
+                <Link to="/crear-pedido">Crear Pedido</Link>
+                <Link to="/cartera">Cartera</Link>
+                <Link to="/gastos">Gastos</Link>
+                <Link to="/login">Login</Link>
+              </nav>
+              <Routes>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/catalogo" element={<Catalogo />} />
+                <Route path="/crear-pedido" element={<CrearPedido />} />
+                <Route path="/cartera" element={<Cartera />} />
+                <Route path="/gastos" element={<Gastos />} />
+                <Route path="/login" element={<Login />} />
+              </Routes>
+            </main>
+          </div>
+        </div>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+};
+
+export default App;
