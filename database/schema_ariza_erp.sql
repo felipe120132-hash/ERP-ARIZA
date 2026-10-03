@@ -1,4 +1,4 @@
-﻿-- ==========================================================================
+-- ==========================================================================
 -- ArizaERP — Esquema principal
 -- ==========================================================================
 -- Este archivo contiene las funciones RPC expuestas al frontend.
@@ -110,3 +110,46 @@ $$;
 
 COMMENT ON FUNCTION anular_remision(UUID) IS
   'Marca una remisión como ANULADA. Los triggers existentes se encargan de reingresar stock y revertir cartera automáticamente.';
+
+
+-- --------------------------------------------------------------------------
+-- RPC: actualizar_pdf_remision  (Migración: 002_actualizar_pdf_remision.sql)
+-- --------------------------------------------------------------------------
+-- Actualiza ÚNICAMENTE la columna pdf_url de una remisión.
+-- SECURITY DEFINER permite que VENDEDORes actualicen pdf_url sin necesitar
+-- el permiso de UPDATE general sobre remisiones (restringido a ADMIN por RLS).
+--
+-- Parámetros:
+--   p_remision_id  UUID   — ID de la remisión a actualizar
+--   p_pdf_url      TEXT   — URL de descarga del PDF en OneDrive
+--
+-- Retorna: VOID
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION actualizar_pdf_remision(
+  p_remision_id UUID,
+  p_pdf_url     TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- 1. Verificar que la remisión existe (un UPDATE sin coincidencia no lanza error)
+  IF NOT EXISTS (
+    SELECT 1 FROM remisiones WHERE id = p_remision_id
+  ) THEN
+    RAISE EXCEPTION 'Remisión con id "%" no encontrada.', p_remision_id;
+  END IF;
+
+  -- 2. Actualizar SOLO la columna pdf_url — ningún otro campo es tocado
+  UPDATE remisiones
+     SET pdf_url = p_pdf_url
+   WHERE id = p_remision_id;
+END;
+$$;
+
+COMMENT ON FUNCTION actualizar_pdf_remision(UUID, TEXT) IS
+  'Actualiza únicamente pdf_url de una remisión. SECURITY DEFINER permite que '
+  'VENDEDORes llamen a esta función sin necesitar permisos de UPDATE general '
+  'sobre la tabla remisiones (restringido a ADMIN por RLS).';

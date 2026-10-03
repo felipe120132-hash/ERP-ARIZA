@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 
 const uuidSchema = z
   .string()
@@ -7,10 +7,13 @@ const uuidSchema = z
 // ---------------------------------------------------------------------------
 // 2.1 perfiles
 // ---------------------------------------------------------------------------
+export const rolUsuarioSchema = z.enum(['ADMIN', 'VENDEDOR']);
+export type RolUsuario = z.infer<typeof rolUsuarioSchema>;
+
 export const perfilSchema = z.object({
   id:               uuidSchema,
   nombre_completo:  z.string(),
-  rol:              z.enum(['ADMIN', 'VENDEDOR']),
+  rol:              rolUsuarioSchema,
   activo:           z.boolean(),
   created_at:       z.coerce.date(),
 });
@@ -174,3 +177,26 @@ export const documentoSchema = z.object({
   created_at:      z.coerce.date(),
 });
 export type Documento = z.infer<typeof documentoSchema>;
+
+// ---------------------------------------------------------------------------
+// Vistas y Resultados RPC
+// ---------------------------------------------------------------------------
+export const alertaStockSchema = z.object({
+  id:           uuidSchema,
+  sku:          z.string(),
+  nombre:       z.string(),
+  categoria:    z.string(),
+  stock_actual: z.number().nonnegative(),
+  stock_minimo: z.number().nonnegative(),
+  semaforo:     z.enum(['ROJO', 'AMARILLO', 'VERDE']),
+});
+export type AlertaStock = z.infer<typeof alertaStockSchema>;
+
+export const resumenFinancieroResultSchema = z.object({
+  total_ventas:       z.number(),
+  total_gastos:       z.number(),
+  ganancia_neta:      z.number(),
+  presupuesto_limite: z.number().nullable().optional(),
+  excede_presupuesto: z.boolean(),
+});
+export type ResumenFinancieroResult = z.infer<typeof resumenFinancieroResultSchema>;

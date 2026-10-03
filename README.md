@@ -1,94 +1,108 @@
 # ArizaERP
 
-Sistema de Gestión Empresarial (ERP) para Distribuidora y Comercializadora Ariza.
-
-Arquitectura basada en **React + Vite + TypeScript**, comunicándose directamente con **Supabase** (PostgREST, Auth, Triggers y funciones RPC en PostgreSQL) sin backend intermediario.
-
----
-
-## 🚀 Requisitos Previos
-
-- [Node.js](https://nodejs.org/) (versión 18, 20 o superior recomendada)
-- [npm](https://www.npmjs.com/) (incluido con Node.js)
+Sistema de gestión (ERP) para **Distribuidora y Comercializadora Ariza**.
+Permite administrar clientes, productos, remisiones de venta, cartera, gastos operacionales y documentos.
+→ Ver arquitectura completa y decisiones de diseño en [docs/estructura_proyecto.md](docs/estructura_proyecto.md).
 
 ---
 
-## 🛠️ Instalación y Puesta en Marcha Local
+## Instalación
 
-### 1. Clonar el repositorio
+### Requisitos previos
+- Node.js ≥ 20 y npm ≥ 10
+- Acceso al proyecto Supabase de Ariza (URL + clave pública)
+
+### Pasos
+
 ```bash
-git clone <URL_DEL_REPOSITORIO>
+# 1. Clonar el repositorio
+git clone <url-del-repo>
 cd ERP-ARIZA
-```
 
-### 2. Instalar dependencias
-```bash
+# 2. Instalar dependencias
 npm install
-```
 
-### 3. Configurar variables de entorno
-Copia el archivo `.env.example` y crea tu archivo local `.env`:
-
-```bash
+# 3. Crear y completar el archivo de variables de entorno
 cp .env.example .env
 ```
-*(En Windows PowerShell: `Copy-Item .env.example .env`)*
 
-Abre `.env` y completa tus credenciales de Supabase:
-```env
-VITE_SUPABASE_URL=https://<tu-proyecto>.supabase.co
-VITE_SUPABASE_ANON_KEY=<tu-anon-key>
+Edita el `.env` recién creado con los valores reales:
+
+| Variable | Dónde encontrarla |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase → **Project Settings → Data API → Project URL** |
+| `VITE_SUPABASE_ANON_KEY` | Supabase → **Project Settings → Data API → Project API keys → anon public** |
+| `TEST_USER_EMAIL` | Email de un usuario real en **Supabase → Authentication → Users** (rol ADMIN recomendado) |
+| `TEST_USER_PASSWORD` | Contraseña del mismo usuario |
+
+> **Importante:** usa siempre la clave **anon** (pública), nunca la `service_role`. La `service_role` bypasea las RLS y solo debe usarse en Edge Functions.
+
+---
+
+## Scripts de validación
+
+### `npm run validar:modelo`
+
+Conecta a Supabase con las credenciales de prueba, consulta las 11 tablas del modelo de datos y valida cada fila con los esquemas Zod.
+
+**Salida esperada si todo está bien:**
+
+```
+✅ perfiles         — 3 filas, 0 errores de validación
+✅ productos        — 45 filas, 0 errores de validación
+...
+✅ documentos       — 2 filas, 0 errores de validación
 ```
 
-> **Nota de seguridad:** Utiliza únicamente la clave pública/anónima (`anon key`). Nunca utilices la clave `service_role` en el frontend.
+Si ves `❌` en alguna tabla, revisa los detalles de Zod impresos debajo; indican exactamente qué campo no coincide con el schema.
 
-### 4. Ejecutar el servidor de desarrollo
-Inicia Vite en modo desarrollo con Hot Module Replacement (HMR):
+### `npm run probar:servicios`
+
+Ejecuta un flujo end-to-end completo usando los servicios ya implementados:
+
+1. Autenticación con `TEST_USER_EMAIL` / `TEST_USER_PASSWORD`
+2. `listarProductos()` y `listarAlertasStock()`
+3. Obtener cliente y producto reales de la BD
+4. `crearRemision()` con esos IDs
+5. `actualizarPdfUrl()` sobre la remisión recién creada
+6. `listarRemisiones()` para confirmar que `pdf_url` quedó guardado
+7. `anularRemision()` sobre la misma remisión
+8. `registrarAbono()` sobre el mismo cliente
+
+**Salida esperada:**
+
+```
+✅ Autenticado como: admin@ariza.com
+✅ Se recibieron 45 producto(s)
+✅ 12 alertas — 🔴 2 ROJO | 🟡 5 AMARILLO | 🟢 5 VERDE
+...
+✅ Remisión de prueba anulada correctamente
+✅ Abono registrado — ID: <uuid>
+```
+
+---
+
+## Estado actual
+
+| Capa | Contenido | Estado |
+|---|---|---|
+| **Modelo** | 11 tablas + 2 vistas — schemas Zod, tipos TypeScript, validación con `npm run validar:modelo` | ✅ Completo y validado |
+| **Controlador** | 7 servicios (productos, clientes, remisiones, cartera, gastos, documentos, OneDrive) + AuthContext + RutaProtegida + 4 RPCs en Supabase (`crear_remision`, `registrar_abono`, `anular_remision`, `actualizar_pdf_remision`) — validado con `npm run probar:servicios` (8 pasos) | ✅ Completo y validado |
+| **Frontend** | Páginas, componentes, UI | 🔲 Pendiente de construir |
+
+El equipo de frontend puede arrancar directamente consumiendo los servicios en `src/services/`.
+Ver el inventario completo en [docs/guia_frontend.md](docs/guia_frontend.md).
+
+---
+
+## Despliegue de Edge Functions (OneDrive)
 
 ```bash
-npm run dev
+# Configurar secrets ANTES de desplegar
+supabase secrets set CLIENT_ID=xxx CLIENT_SECRET=yyy TENANT_ID=zzz
+
+# Desplegar
+supabase functions deploy onedrive-auth onedrive-refresh
 ```
 
-La aplicación estará disponible típicamente en `http://localhost:5173/`.
-
----
-
-## 📦 Scripts Disponibles
-
-- `npm run dev`: Inicia el servidor de desarrollo local con Vite.
-- `npm run build`: Compila y valida el proyecto con TypeScript (`tsc -b`) y genera el bundle de producción en `dist/`.
-- `npm run preview`: Previsualiza localmente el build de producción generado.
-- `npm run lint`: Ejecuta el linter (Oxlint).
-- `npm run validar:modelo`: Valida los datos existentes en Supabase contra los schemas de Zod.
-
----
-
-## 📂 Estructura del Proyecto
-
-La estructura del código fuente sigue la arquitectura definida en `docs/estructura_proyecto.md`:
-
-```
-ariza-erp/
-├── README.md                          # Este archivo: instrucciones y guía rápida
-├── .env.example                       # Plantilla de variables de entorno requeridas
-├── docs/                              # Documentación oficial del proyecto
-│   ├── estructura_proyecto.md         # Arquitectura y reglas de negocio
-│   ├── diccionario_datos.md           # Esquema de base de datos
-│   └── contrato_api_ariza_erp.md      # Contrato de integración frontend-Supabase
-├── database/                          # Scripts SQL y migraciones de Supabase
-├── public/                            # Recursos estáticos
-└── src/
-    ├── main.tsx                       # Punto de entrada de la aplicación
-    ├── App.tsx                        # Configuración de rutas y proveedores principales
-    ├── types/                         # Interfaces TypeScript (database.types.ts)
-    ├── services/                      # Única capa autorizada para comunicarse con Supabase
-    ├── context/                       # Contextos globales (ej. AuthContext)
-    ├── hooks/                         # Custom hooks reutilizables (useAuth, useCatalogo, etc.)
-    ├── components/
-    │   ├── ui/                        # Componentes UI reutilizables (Button, Input, etc.)
-    │   └── layout/                    # Componentes de estructura (Navbar, Sidebar)
-    ├── pages/                         # Vistas por pantalla/módulo del sistema
-    └── styles/                        # Hojas de estilo globales y modulares
-```
-
-> **Regla de Arquitectura:** Ningún componente ni página debe importar `supabaseClient` directamente. Todas las interacciones con la base de datos se gestionan a través de los módulos en `src/services/`.
+Ver instrucciones completas en [src/services/onedriveService.ts](src/services/onedriveService.ts).
