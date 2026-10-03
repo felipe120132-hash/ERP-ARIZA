@@ -1,4 +1,4 @@
-﻿# ArizaERP
+# ArizaERP
 
 Sistema de Gestión Empresarial (ERP) para Distribuidora y Comercializadora Ariza.
 
@@ -59,6 +59,7 @@ La aplicación estará disponible típicamente en `http://localhost:5173/`.
 - `npm run build`: Compila y valida el proyecto con TypeScript (`tsc -b`) y genera el bundle de producción en `dist/`.
 - `npm run preview`: Previsualiza localmente el build de producción generado.
 - `npm run lint`: Ejecuta el linter (Oxlint).
+- `npm run validar:modelo`: Valida los datos existentes en Supabase contra los schemas de Zod.
 
 ---
 
