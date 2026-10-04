@@ -1,3 +1,6 @@
+import { usePreciosPedido } from "@/hooks/usePreciosPedido";
+import { subtotalPedido } from "@/lib/subtotalPedido";
+import { formatCOP } from "@/lib/cartera";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ShoppingBag, Trash2, CheckCircle2 } from "lucide-react";
@@ -62,13 +65,25 @@ export default function Carrito({
       Math.abs(quantity * 100 - Math.round(quantity * 100)) > 1e-7
     );
   });
+  const precios = usePreciosPedido(cliente?.id ?? "");
+  let estimate: ReturnType<typeof subtotalPedido> | null = null;
+  let estimateError: string | null = null;
+  if (cliente && precios.data && !invalid && !loading) {
+    try {
+      estimate = subtotalPedido(cliente, pedido.lineas, products, precios.data);
+    } catch (e) {
+      estimateError =
+        e instanceof Error ? e.message : "No se pudo calcular el subtotal.";
+    }
+  }
   const valid =
     !!cliente &&
     !invalid &&
     pedido.lineas.length > 0 &&
     !loading &&
     !cargando &&
-    !error;
+    !error &&
+    !!estimate;
   return (
     <aside
       id="pedido-en-curso"
@@ -153,6 +168,7 @@ export default function Carrito({
           ) : (
             pedido.lineas.map((line) => {
               const product = products.find((x) => x.id === line.producto.id);
+              const importe = estimate?.detalle.get(line.producto.id);
               return (
                 <div className="order-line" key={line.producto.id}>
                   <strong>{line.producto.nombre}</strong>
@@ -162,6 +178,14 @@ export default function Carrito({
                       ? `${product.stock_actual} disponibles`
                       : "Producto no disponible"}
                   </small>
+                  {importe && (
+                    <small className="order-line-price">
+                      {formatCOP(importe.precio)} por unidad ·{" "}
+                      {importe.especial ? "Precio especial" : "Precio base"}
+                      <br />
+                      Subtotal: {formatCOP(importe.subtotal)}
+                    </small>
+                  )}
                   <div>
                     <Label
                       className="sr-only"
@@ -225,10 +249,44 @@ export default function Carrito({
           </SwitchPrimitive.Root>
         </div>
       </fieldset>
-      <p className="order-note">
-        El precio por cliente, el IVA y el total se mostrarán en la remisión una
-        vez registrada.
-      </p>
+      <div
+        className="order-subtotal"
+        aria-label="Resumen del importe del pedido"
+        aria-live="polite"
+      >
+        <small>Subtotal estimado · sin IVA</small>
+        <strong data-testid="pedido-subtotal">
+          {estimate ? formatCOP(estimate.subtotal) : "—"}
+        </strong>
+        {!cliente ? (
+          <p>Selecciona un cliente para consultar sus precios.</p>
+        ) : precios.loading ? (
+          <p>Consultando precios del cliente…</p>
+        ) : precios.error || estimateError ? (
+          <p role="alert">{precios.error ?? estimateError}</p>
+        ) : invalid ? (
+          <p>Corrige las cantidades para ver el subtotal.</p>
+        ) : (
+          <p>
+            {pedido.iva
+              ? "IVA no incluido en este subtotal."
+              : "Pedido sin IVA."}{" "}
+            El importe definitivo se confirma al registrar la remisión.
+          </p>
+        )}
+        {cliente && (
+          <Button
+            variant="ghost"
+            disabled={blocked || precios.loading}
+            onClick={() => {
+              setReview(false);
+              precios.refresh();
+            }}
+          >
+            Actualizar precios del pedido
+          </Button>
+        )}
+      </div>{" "}
       {invalid && !loading && (
         <p role="alert" className="error-box">
           Revisa las cantidades: deben ser positivas, tener hasta dos decimales
@@ -253,6 +311,10 @@ export default function Carrito({
           {review && valid && (
             <div className="order-review">
               <strong>¿Registrar esta venta?</strong>
+              <span className="review-subtotal">
+                Subtotal estimado:{" "}
+                {estimate ? formatCOP(estimate.subtotal) : "—"}
+              </span>
               <p>
                 {cliente?.nombre_tienda} · {pedido.lineas.length} referencias ·{" "}
                 {pedido.pago === "CONTADO" ? "Contado" : "Crédito"} ·{" "}

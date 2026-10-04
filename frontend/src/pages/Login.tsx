@@ -1,3 +1,4 @@
+import BrandLogo from "@/components/BrandLogo";
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, Eye, EyeOff, Layers3, ShieldCheck } from "lucide-react";
@@ -45,7 +46,7 @@ export default function Login() {
     <div className="login-shell">
       <section className="login-story">
         <div className="brand">
-          <div className="brand-mark">A</div>
+          <BrandLogo />
           <div>
             <strong>Ariza One</strong>
             <small>DISTRIBUCIONES ARIZA</small>

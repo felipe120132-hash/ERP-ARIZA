@@ -39,6 +39,8 @@ test("catálogo: búsqueda, filtros, precio, paginación y detalle", async ({
   await page.getByRole("option", { name: "Distribuidor", exact: true }).click();
   await expect(page.getByRole("article")).toContainText("16.000");
   await page.getByRole("button", { name: "Limpiar filtros" }).click();
+  await expect(page.getByLabel("Buscar producto o SKU")).toHaveValue("");
+  await expect(page.getByRole("article")).toHaveCount(12);
   await page.getByLabel("Categoría", { exact: true }).click();
   await page.getByRole("option", { name: "Alimentos", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(7);

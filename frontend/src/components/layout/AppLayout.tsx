@@ -1,3 +1,4 @@
+import BrandLogo from "@/components/BrandLogo";
 import { PedidoProvider } from "@/context/PedidoContext";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
@@ -50,7 +51,7 @@ function Navigation({
   return (
     <>
       <NavLink to="/catalogo" className="brand" onClick={onNavigate}>
-        <div className="brand-mark">A</div>
+        <BrandLogo />
         {!collapsed && (
           <div>
             <strong>Ariza One</strong>
@@ -141,11 +142,13 @@ function LayoutContent() {
   const [collapsed, setCollapsed] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-  const item = navigation.find(
-    (item) =>
-      location.pathname === item.path ||
-      location.pathname.startsWith(`${item.path}/`),
-  );
+  const item = location.pathname.startsWith("/productos")
+    ? { label: "Administrar productos" }
+    : navigation.find(
+        (item) =>
+          location.pathname === item.path ||
+          location.pathname.startsWith(`${item.path}/`),
+      );
   return (
     <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
       <aside className="desktop-sidebar">

@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, RefreshCw, Plus, ArrowRight } from "lucide-react";
+import {
+  ArrowUpRight,
+  RefreshCw,
+  Plus,
+  ArrowRight,
+  ChartNoAxesCombined,
+  Wallet,
+  Files,
+  BellRing,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { resumenService, type CarteraResumen } from "@/services/resumenService";
@@ -106,6 +115,9 @@ export default function Resumen() {
       <div className={`overview-stats ${admin ? "admin" : ""}`}>
         {admin && (
           <Link to={`/finanzas?mes=${month}`}>
+            <i className="overview-stat-icon">
+              <ChartNoAxesCombined size={21} />
+            </i>
             <small>Ventas del mes · {month}</small>
             <strong>{f ? formatCOP(f.total_ventas) : "—"}</strong>
             <span>
@@ -117,6 +129,9 @@ export default function Resumen() {
           </Link>
         )}
         <Link to="/cartera?estado=saldo">
+          <i className="overview-stat-icon">
+            <Wallet size={21} />
+          </i>
           <small>Cartera pendiente actual</small>
           <strong>{c ? formatCOP(c.saldo) : "—"}</strong>
           <span>
@@ -127,6 +142,9 @@ export default function Resumen() {
           </span>
         </Link>
         <Link to="/remisiones?estado=PENDIENTE">
+          <i className="overview-stat-icon">
+            <Files size={21} />
+          </i>
           <small>Remisiones pendientes</small>
           <strong>{r ? r.pendientes : "—"}</strong>
           <span>
@@ -134,6 +152,9 @@ export default function Resumen() {
           </span>
         </Link>
         <Link to="/inventario">
+          <i className="overview-stat-icon alert">
+            <BellRing size={21} />
+          </i>
           <small>Referencias con alerta</small>
           <strong>{a ? a.total : "—"}</strong>
           <span>
@@ -247,7 +268,10 @@ export default function Resumen() {
                 </Link>
               ))}
               {a.total > a.productos.length && (
-                <p>Mostrando {a.productos.length} de {a.total} referencias con alerta.</p>
+                <p>
+                  Mostrando {a.productos.length} de {a.total} referencias con
+                  alerta.
+                </p>
               )}
             </div>
           )}

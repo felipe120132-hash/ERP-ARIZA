@@ -60,32 +60,40 @@ async function mock(
           activo: active,
           created_at: now,
         }
-      : url.includes("/vista_alertas_stock")
-        ? products.map((p) => ({
-            id: p.id,
-            sku: p.sku,
-            nombre: p.nombre,
-            categoria: p.categoria,
-            stock_actual: p.stock_actual,
-            stock_minimo: p.stock_minimo,
-            semaforo: p.sku === "AR-0" ? "ROJO" : "VERDE",
-          }))
-        : url.includes("/productos")
-          ? products
-          : url.includes("/logout")
-            ? {}
-            : url.includes("/token")
-              ? {
-                  error_code: "invalid_credentials",
-                  msg: "Invalid login credentials",
-                }
-              : user;
+      : url.includes("/precios_cliente")
+        ? []
+        : url.includes("/vista_alertas_stock")
+          ? products.map((p) => ({
+              id: p.id,
+              sku: p.sku,
+              nombre: p.nombre,
+              categoria: p.categoria,
+              stock_actual: p.stock_actual,
+              stock_minimo: p.stock_minimo,
+              semaforo: p.sku === "AR-0" ? "ROJO" : "VERDE",
+            }))
+          : url.includes("/productos")
+            ? products
+            : url.includes("/logout")
+              ? {}
+              : url.includes("/token")
+                ? {
+                    error_code: "invalid_credentials",
+                    msg: "Invalid login credentials",
+                  }
+                : user;
     await route.fulfill({
       status: url.includes("/token")
         ? 400
         : error && url.includes("/productos")
           ? 500
           : 200,
+      headers: url.includes("/precios_cliente")
+        ? {
+            "content-range": "*/0",
+            "access-control-expose-headers": "content-range",
+          }
+        : {},
       contentType: "application/json",
       body: JSON.stringify(
         error && url.includes("/productos")

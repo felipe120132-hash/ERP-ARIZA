@@ -79,6 +79,95 @@ async function draft(page: Page) {
     .click();
   await page.getByLabel("Seleccionar cliente").selectOption(clientId);
 }
+test("subtotal: precio tienda, cantidad decimal y revisión sin IVA", async ({
+  page,
+}) => {
+  await setup(page);
+  await draft(page);
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("18.000,00");
+  await page.getByLabel("Cantidad de Café de origen").fill("2.25");
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("40.500,00");
+  await page.getByRole("switch", { name: "Aplicar IVA" }).click();
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("40.500,00");
+  await page.getByRole("button", { name: "Revisar pedido" }).click();
+  await expect(page.locator(".review-subtotal")).toContainText("40.500,00");
+});
+test("subtotal: distribuidor y acuerdo de precio cero tienen prioridad", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route(`${api}/rest/v1/clientes*`, (route) =>
+    route.fulfill({ json: [{ ...client, tipo_cliente: "DISTRIBUIDOR" }] }),
+  );
+  await page.reload();
+  await draft(page);
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("16.000,00");
+  await page.route(`${api}/rest/v1/precios_cliente*`, (route) =>
+    route.fulfill({
+      headers: {
+        "content-range": "0-0/1",
+        "access-control-expose-headers": "content-range",
+      },
+      json: [
+        {
+          id: saleId,
+          cliente_id: clientId,
+          producto_id: products[0].id,
+          precio_especial: 0,
+          created_at: now,
+          updated_at: now,
+        },
+      ],
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Actualizar precios del pedido" })
+    .click();
+  await expect(page.getByTestId("pedido-subtotal")).toHaveText(/\$\s*0,00/);
+  await expect(
+    page.getByRole("button", { name: "Revisar pedido" }),
+  ).toBeEnabled();
+});
+test("subtotal: error de precios bloquea confirmación y permite reintentar", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route(`${api}/rest/v1/precios_cliente*`, (route) =>
+    route.fulfill({ status: 500, json: { message: "Error de prueba" } }),
+  );
+  await draft(page);
+  await expect(page.getByTestId("pedido-subtotal")).toHaveText("—");
+  await expect(
+    page.getByText("No pudimos consultar los precios de este cliente."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Revisar pedido" }),
+  ).toBeDisabled();
+  await page.route(`${api}/rest/v1/precios_cliente*`, (route) =>
+    route.fulfill({
+      headers: {
+        "content-range": "0-0/1",
+        "access-control-expose-headers": "content-range",
+      },
+      json: [
+        {
+          id: saleId,
+          cliente_id: clientId,
+          producto_id: products[0].id,
+          precio_especial: 123.45,
+          created_at: now,
+          updated_at: now,
+        },
+      ],
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Actualizar precios del pedido" })
+    .click();
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("123,45");
+  await page.getByLabel("Cantidad de Café de origen").fill("1.5");
+  await expect(page.getByTestId("pedido-subtotal")).toContainText("185,18");
+});
 test("pedido: payload exacto, doble clic, total del servidor y borrado del carrito", async ({
   page,
 }) => {

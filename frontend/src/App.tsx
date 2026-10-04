@@ -5,6 +5,9 @@ import { RutaProtegida } from "@/components/layout/RutaProtegida";
 import AppLayout from "@/components/layout/AppLayout";
 import Login from "@/pages/Login";
 import ModulePending from "@/pages/ModulePending";
+const AdministrarCliente = lazy(() => import("@/pages/AdministrarCliente"));
+const ProductosAdmin = lazy(() => import("@/pages/ProductosAdmin"));
+const AdministrarProducto = lazy(() => import("@/pages/AdministrarProducto"));
 const Resumen = lazy(() => import("@/pages/Resumen"));
 const Finanzas = lazy(() => import("@/pages/Finanzas"));
 const Inventario = lazy(() => import("@/pages/Inventario"));
@@ -25,6 +28,36 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<RutaProtegida />}>
             <Route element={<AppLayout />}>
+              <Route
+                path="productos"
+                element={
+                  <Suspense
+                    fallback={<div role="status">Cargando productos…</div>}
+                  >
+                    <ProductosAdmin />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="productos/nuevo"
+                element={
+                  <Suspense
+                    fallback={<div role="status">Cargando producto…</div>}
+                  >
+                    <AdministrarProducto />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="productos/:id/editar"
+                element={
+                  <Suspense
+                    fallback={<div role="status">Cargando producto…</div>}
+                  >
+                    <AdministrarProducto />
+                  </Suspense>
+                }
+              />
               <Route
                 path="remisiones"
                 element={
@@ -70,6 +103,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<div role="status">Cargando…</div>}>
                     <Kardex />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="cartera/nuevo"
+                element={
+                  <Suspense fallback={<div role="status">Cargando…</div>}>
+                    <AdministrarCliente />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="cartera/:id/administrar"
+                element={
+                  <Suspense fallback={<div role="status">Cargando…</div>}>
+                    <AdministrarCliente />
                   </Suspense>
                 }
               />

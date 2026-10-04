@@ -18,13 +18,13 @@ No colocar `service_role`, contraseñas de prueba ni secretos de Microsoft en va
 - Catálogo de productos activos, búsqueda por nombre/SKU (ignora tildes), categoría, origen, precios base tienda/distribuidor, paginación, vista de tarjetas/lista y panel de detalle.
 - Stock y semáforo obtenidos del backend; imágenes mediante URLs firmadas con renovación periódica.
 - Estados de carga, error con reintento, catálogo vacío y ausencia de imágenes.
-- Las demás rutas indican explícitamente que están pendientes. La administración de productos/clientes y OneDrive siguen pendientes. Las entregas siguientes documentan los módulos implementados.
+- Las demás rutas indican explícitamente que están pendientes. La administración de productos/clientes, finanzas y OneDrive siguen pendientes; pedidos/remisiones y cartera/abonos se describen en las siguientes entregas.
 
 ## Arquitectura e integración
 
 `src/services/` y `src/types/` parten de ERP-ARIZA (commit revisado: 57c0a0d). Las pantallas no importan `supabaseClient`. Se añadieron `authService` e `imagenesService` y un contexto de autenticación que rechaza perfiles ausentes/inactivos y evita consultas dentro del callback síncrono de Supabase.
 
-No se recalculan precios especiales, IVA ni semáforos. Los precios del catálogo son informativos; el importe definitivo de una remisión debe venir de las RPC.
+Los precios del catálogo son informativos. El carrito previsualiza un subtotal estimado sin IVA según el tipo de cliente y sus acuerdos de precio; el importe definitivo de una remisión viene de las RPC. Los semáforos provienen del backend.
 
 ## Verificación
 
@@ -87,6 +87,33 @@ Se verificó además login y lectura del catálogo real con la cuenta de prueba 
 - Generación local en el navegador con carga diferida de jsPDF/AutoTable. No sube archivos ni actualiza `pdf_url`; la conexión documental con OneDrive sigue pendiente.
 - Anulación visible solo para ADMIN y remisiones no anuladas. Consulta previa, confirmación escribiendo consecutivo, bloqueo de doble clic y llamada exclusiva a `anular_remision`.
 - Se confirma el estado con una lectura posterior. Un fallo posterior no reenvía la anulación. La marca de envío incierto sobrevive al cierre del panel y recarga de la misma pestaña; se consulta el estado antes de habilitar otro intento.
-- La migración 004 del backend corrige la autorización ADMIN de anulación y el caso NULL de finanzas. Confirmar su aplicación en Supabase y agregar validación de perfil activo. Ver PENDIENTES-FRONTEND.md.
+- **Pendiente backend antes de producción:** la definición local de `anular_remision` es SECURITY DEFINER y no valida ADMIN en su cuerpo. El permiso EXECUTE para authenticated no distingue roles. `backend-patches/anular-remision-admin.sql` contiene una propuesta de corrección (ADMIN activo, control de NULL y permisos), NO aplicada a la base. El frontend no reemplaza esta autorización.
 - Los triggers de reversión se mencionan pero no se implementan en el repositorio backend revisado. Verificar en un entorno de pruebas stock, kardex, cartera y remisiones con abonos asociados/generales antes de usar anulación en producción. Anular no representa devolver dinero.
 - Ocho pruebas nuevas con respuestas simuladas: confirmación, payload, doble clic, rechazo, respuesta incierta, fallo de recarga, vendedor, PDF fresco/anulado/multipágina, ausencia de líneas e impresión. PDFs de prueba revisados visualmente y por extracción de texto. Ninguna anulación real ejecutada.
+
+## Octava entrega: administración de clientes y precios especiales
+
+- ADMIN: crear clientes desde cartera y administrarlos desde su historial. Nombre, contacto, teléfono, dirección, tipo y actividad. Desactivación conserva historial y saldo; no hay borrado de clientes ni edición de saldo/mora en estos formularios.
+- Revisar antes de guardar; payload estricto de campos comerciales. Se comprueba la sesión y el perfil ADMIN activo antes de las escrituras; RLS sigue siendo la autorización efectiva del servidor.
+- Crear, editar y quitar precios especiales por producto/cliente. Precios de 0 a 9.999.999.999,99 COP, máximo dos decimales. Quitar un acuerdo restablece la resolución por precio base en ventas futuras. No altera remisiones anteriores.
+- El listado de acuerdos recorre páginas del servidor; las actualizaciones/eliminaciones filtran por cliente, identificador y precio anterior para detectar cambios concurrentes. La restricción UNIQUE del backend impide dos acuerdos por producto/cliente.
+- Bloqueo de doble clic y marca de envío incierto por usuario en sessionStorage; comprobar el resultado antes de habilitar otro intento. La creación usa un UUID generado antes de enviar para poder consultar ese registro tras perder la respuesta.
+- Ocho pruebas nuevas cubren payload comercial, creación, edición/desactivación, precio cero, precisión, eliminación confirmada, rol vendedor, rechazo, respuesta incierta y móvil. Todas las escrituras de prueba son simuladas.
+
+## Novena entrega: identidad visual y subtotal del pedido
+
+- Identidad azul y acuática basada en la referencia: logo original, navegación, resumen, tarjetas y acceso adaptados a escritorio y móvil.
+- Alertas con rojo, amarillo y verde de mayor contraste, etiquetas e iconos; estados de remisión diferenciados.
+- Subtotal estimado sin IVA antes de confirmar, con precio por línea, tarifa tienda/distribuidor y prioridad del precio especial (incluido cero). Cantidades decimales y redondeo monetario por línea. Si los acuerdos no se pueden verificar, se bloquea la confirmación y se ofrece reintento.
+- La vista previa es informativa: el backend sigue resolviendo los importes al ejecutar crear_remision. El payload no incorpora precios ni totales calculados por el cliente.
+- PDF con logo original y nombre Distribuciones Ariza, cabecera de marca y encabezado de continuidad. Conserva estado, cifras originales y paginación. Sigue identificado como remisión comercial, no factura electrónica. No se agregan datos fiscales ni de contacto del emisor no proporcionados.
+
+## Décima entrega: administración de productos e imágenes
+
+- Acceso ADMIN desde Catálogo e Inventario → Administrar productos. Listado con búsqueda, filtro de activos/inactivos y paginación; lectura completa por páginas del servidor con conteo verificado.
+- Crear y editar SKU, nombre, categoría, origen, precios tienda/distribuidor, IVA (0, 5, 19), stock mínimo y actividad. Precios y umbrales no negativos, máximo dos decimales y límite NUMERIC(12,2). Desactivar conserva historial; no hay eliminación física. El alta usa el stock cero predeterminado por la base; las ediciones no envían stock_actual.
+- Revisión y confirmación antes de guardar, validación de administrador activo y políticas RLS como autoridad. La edición compara los campos comerciales originales para detectar modificaciones concurrentes sin impedir movimientos de stock.
+- Después del alta se puede cargar o reemplazar la foto con vista previa. JPG/PNG/WebP, hasta 5 MB, 8000 px por lado y 25 megapíxeles; se valida tipo, firma y decodificación. URLs firmadas del bucket privado productos-imagenes.
+- Cada foto recibe una ruta única productos/<UUID>/<UUID>.<ext>; primero se sube y luego se asocia condicionalmente sobre la ruta anterior. No se sobrescribe ni elimina la foto anterior. Como Storage y Postgres no forman una transacción, una asociación fallida puede dejar un objeto sin usar; su limpieza requiere un proceso de mantenimiento posterior que verifique referencias antes de borrar.
+- Las respuestas inciertas bloquean otro envío, persisten en sessionStorage por usuario y producto, y ofrecen consultar el resultado. Las pruebas de escritura y Storage usan respuestas simuladas, sin crear productos ni subir fotos a la base real. La verificación final de permisos y subida real queda para una base de pruebas configurada con el bucket privado.
+- Doce pruebas nuevas cubren altas, edición/desactivación, errores de SKU y permisos, paginación incompleta, precisión, imágenes inválidas/grandes, acceso vendedor, recuperación de respuestas inciertas, asociación fallida, foto visible en catálogo y adaptación móvil.

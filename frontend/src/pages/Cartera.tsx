@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -16,6 +17,7 @@ import { formatCOP } from "@/lib/cartera";
 import { normalize } from "@/lib/catalog";
 import type { Cliente } from "@/types/schemas";
 export default function Cartera() {
+  const { perfil } = useAuth();
   const [clientes, setClientes] = useState<Cliente[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
@@ -145,6 +147,13 @@ export default function Cartera() {
             </p>
           </div>
         </div>
+        {perfil?.rol === "ADMIN" && (
+          <div className="client-create">
+            <Button asChild>
+              <Link to="/cartera/nuevo">Crear cliente</Link>
+            </Button>
+          </div>
+        )}
         <div className="history-filters">
           <Input
             aria-label="Buscar cliente"

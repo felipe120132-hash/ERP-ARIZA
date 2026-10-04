@@ -12,12 +12,14 @@ import { Input } from "@/components/ui/input";
 import { productosService } from "@/services/productosService";
 import type { Producto, AlertaStock } from "@/types/schemas";
 import { normalize } from "@/lib/catalog";
+import { useAuth } from "@/context/AuthContext";
 const stateLabels = {
   ROJO: "Crítico",
   AMARILLO: "Por agotarse",
   VERDE: "Disponible",
 };
 export default function Inventario() {
+  const { perfil } = useAuth();
   const [products, setProducts] = useState<Producto[]>([]),
     [alerts, setAlerts] = useState<AlertaStock[]>([]),
     [loading, setLoading] = useState(true),
@@ -100,14 +102,21 @@ export default function Inventario() {
           <h1>Cada unidad cuenta.</h1>
           <p>Existencias, alertas y trazabilidad de tus productos.</p>
         </div>
-        <Button
-          variant="outline"
-          disabled={loading}
-          onClick={() => setAttempt((x) => x + 1)}
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          Actualizar
-        </Button>
+        <div className="receipt-tools">
+          {perfil?.rol === "ADMIN" && (
+            <Button asChild variant="outline">
+              <Link to="/productos">Administrar productos</Link>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            disabled={loading}
+            onClick={() => setAttempt((x) => x + 1)}
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            Actualizar
+          </Button>
+        </div>
       </div>
       <div className="catalog-stats">
         <div>

@@ -1,7 +1,8 @@
 import Carrito from "@/components/Carrito";
 import { usePedido } from "@/context/PedidoContext";
 import { useDeferredValue, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import {
   Search,
   Package,
@@ -100,6 +101,7 @@ function FilterSelect({
   );
 }
 export default function Catalogo() {
+  const { perfil } = useAuth();
   const pedido = usePedido();
   const { products, alerts, images, loading, error, warning, reload } =
     useCatalogo();
@@ -156,14 +158,21 @@ export default function Catalogo() {
           <h1>Todo listo para vender.</h1>
           <p>Encuentra cada referencia y consulta sus existencias.</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => void reload()}
-          disabled={loading}
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          Actualizar
-        </Button>
+        <div className="receipt-tools">
+          {perfil?.rol === "ADMIN" && (
+            <Button asChild variant="outline">
+              <Link to="/productos">Administrar productos</Link>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => void reload()}
+            disabled={loading}
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            Actualizar
+          </Button>
+        </div>
       </div>
       <div className="catalog-stats">
         <div>

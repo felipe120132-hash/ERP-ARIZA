@@ -2,7 +2,14 @@ import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import type { DocumentoRemision } from "@/services/documentoRemisionService";
 import { formatCOP } from "./cartera";
-export function generarRemisionPdf(data: DocumentoRemision) {
+import logoUrl from "@/assets/ariza-logo.png";
+export async function generarRemisionPdf(data: DocumentoRemision) {
+  const logoResponse = await fetch(logoUrl);
+  if (!logoResponse.ok)
+    throw new Error(
+      "No fue posible cargar el logo del documento. Intenta nuevamente.",
+    );
+  const logo = new Uint8Array(await logoResponse.arrayBuffer());
   const { remision: r, cliente: c, lines, names } = data;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   doc.setProperties({
@@ -11,25 +18,32 @@ export function generarRemisionPdf(data: DocumentoRemision) {
     subject: "Remisión comercial",
   });
   const margin = 15;
-  doc.setFillColor(235, 241, 248);
-  doc.rect(0, 0, 210, 43, "F");
-  doc.setTextColor(25, 44, 65);
+  doc.setFillColor(13, 57, 96);
+  doc.rect(0, 0, 210, 49, "F");
+  doc.setFillColor(18, 174, 218);
+  doc.rect(0, 49, 210, 2, "F");
+  doc.addImage(logo, "PNG", margin, 8, 32, 32);
+  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  doc.text("DISTRIBUCIONES ARIZA", margin, 19);
+  doc.setFontSize(10);
+  doc.text("DISTRIBUCIONES", 53, 20);
+  doc.setFontSize(23);
+  doc.text("ARIZA", 53, 30);
   doc.setFontSize(11);
   doc.text(`REMISIÓN #${r.consecutivo}`, 195, 19, { align: "right" });
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text("Documento comercial - No es factura electrónica", margin, 28);
+  doc.setTextColor(210, 233, 248);
+  doc.text("Documento comercial", 195, 37, { align: "right" });
+  doc.text("No es factura electrónica", 195, 42, { align: "right" });
   doc.setTextColor(
-    r.estado === "ANULADA" ? 170 : 70,
-    r.estado === "ANULADA" ? 35 : 85,
-    r.estado === "ANULADA" ? 35 : 100,
+    255,
+    r.estado === "ANULADA" ? 175 : 255,
+    r.estado === "ANULADA" ? 175 : 255,
   );
   doc.text(`Estado: ${r.estado}`, 195, 29, { align: "right" });
   autoTable(doc, {
-    startY: 49,
+    startY: 58,
     margin: { left: 15, right: 15 },
     theme: "plain",
     styles: {
@@ -147,6 +161,12 @@ export function generarRemisionPdf(data: DocumentoRemision) {
   const pages = doc.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
+    if (p > 1) {
+      doc.setFontSize(8);
+      doc.setTextColor(13, 57, 96);
+      doc.text("DISTRIBUCIONES ARIZA", 15, 11);
+      doc.text(`REMISIÓN #${r.consecutivo}`, 195, 11, { align: "right" });
+    }
     doc.setDrawColor(220, 228, 237);
     doc.line(15, 278, 195, 278);
     doc.setFontSize(7);

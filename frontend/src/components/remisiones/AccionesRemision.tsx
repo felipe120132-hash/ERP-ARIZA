@@ -47,7 +47,7 @@ export default function AccionesRemision({
         cargarDocumentoRemision(remision.id),
         import("@/lib/remisionPdf"),
       ]);
-      const doc = generarRemisionPdf(data);
+      const doc = await generarRemisionPdf(data);
       if (preview) {
         const url = URL.createObjectURL(doc.output("blob"));
         preview.location.replace(url);

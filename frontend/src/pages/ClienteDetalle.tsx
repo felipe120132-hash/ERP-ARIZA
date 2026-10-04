@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -16,6 +17,7 @@ import RegistrarAbono from "@/components/cartera/RegistrarAbono";
 import { formatCOP } from "@/lib/cartera";
 import type { Cliente, AbonoCartera, Remision } from "@/types/schemas";
 export default function ClienteDetalle() {
+  const { perfil } = useAuth();
   const { id } = useParams();
   const [cliente, setCliente] = useState<Cliente | null>(null),
     [abonos, setAbonos] = useState<AbonoCartera[]>([]),
@@ -78,6 +80,13 @@ export default function ClienteDetalle() {
           <p>Un recorrido por sus remisiones y pagos.</p>
         </div>
         <div className="order-actions">
+          {perfil?.rol === "ADMIN" && cliente && (
+            <Button asChild variant="outline">
+              <Link to={`/cartera/${cliente.id}/administrar`}>
+                Administrar cliente
+              </Link>
+            </Button>
+          )}
           <Button asChild variant="outline">
             <Link to="/cartera">
               <ArrowLeft size={16} />

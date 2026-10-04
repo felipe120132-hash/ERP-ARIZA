@@ -4,12 +4,12 @@ Actualizado: 4 de octubre de 2026.
 
 ## Ya implementado
 
-Login y sesión; catálogo y carrito; creación y consulta de remisiones; PDF e impresión; interfaz de anulación para ADMIN; cartera e historial de clientes; registro de abonos; consulta de inventario y kardex; finanzas y registro de gastos; resumen de operación. Diseño adaptable y 47 pruebas de navegador con respuestas simuladas.
+Login y sesión; catálogo y carrito; creación y consulta de remisiones; PDF e impresión; interfaz de anulación para ADMIN; cartera e historial de clientes; registro de abonos; consulta de inventario y kardex; finanzas y registro de gastos; resumen de operación. Administración de clientes y precios especiales implementada en la segunda entrega local. Identidad azul con logo de Distribuciones Ariza, alertas de mayor contraste, subtotal estimado sin IVA antes de confirmar y PDF con identidad de marca. Administración de productos e imágenes implementada localmente. Diseño adaptable y 70 pruebas de navegador con respuestas simuladas.
 
 ## Próxima fase, en orden sugerido
 
-1. **Administración de clientes:** crear, editar, activar/desactivar y gestionar precios especiales por producto/cliente. Actualmente se consultan clientes y se registran abonos.
-2. **Administración de productos:** crear, editar, activar/desactivar, cargar imágenes y configurar stock mínimo. Actualmente el catálogo es de consulta y permite preparar pedidos.
+1. **Administración de clientes implementada localmente:** crear, editar, activar/desactivar y gestionar precios especiales por producto/cliente. Pendiente publicar esta segunda entrega y validarla con escrituras controladas en una base de pruebas.
+2. **Administración de productos e imágenes implementada localmente:** crear, editar, activar/desactivar, cargar o reemplazar fotos y configurar stock mínimo. Pendiente publicar y validar escrituras y Storage en una base de pruebas. La limpieza de fotos antiguas o subidas sin asociar queda para mantenimiento controlado.
 3. **Entradas y ajustes de inventario:** formularios, permisos y confirmaciones. Verificar primero que el backend ofrezca operaciones atómicas que actualicen stock y kardex juntos; no editar stock directamente desde el frontend.
 4. **Documentos y OneDrive:** centro documental, autenticación Microsoft, callback, subida, asociación con cliente/remisión, consulta y recuperación de errores. Verificar configuración y despliegue de las Edge Functions. El PDF local ya funciona; aún no se sube ni se persiste su enlace.
 5. **Presupuestos:** creación y edición del límite mensual para ADMIN. Hoy solo se consulta.
