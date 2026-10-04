@@ -108,3 +108,16 @@ supabase functions deploy onedrive-auth onedrive-refresh
 ```
 
 Ver instrucciones completas en [src/services/onedriveService.ts](src/services/onedriveService.ts).
+
+## Frontend — primera fase
+
+La aplicación operativa está en [`frontend/`](frontend/README.md). Conserva sus propias dependencias y configuración para no reemplazar los servicios y herramientas del backend.
+
+```sh
+cd frontend
+npm ci
+# Crear .env.local a partir de .env.example con URL y clave pública de Supabase.
+npm run dev
+```
+
+Consulta el [listado de pendientes para la próxima fase](frontend/PENDIENTES-FRONTEND.md).
