@@ -42,6 +42,8 @@
 >
 > Esta regla garantiza que la validación Zod, el manejo de errores en español
 > y los tipos seguros funcionen de forma consistente en toda la app.
+>
+> 🔒 **Autenticación requerida:** Todas las funciones RPC y consultas de datos requieren sesión activa (`authenticated`) — ninguna es accesible sin login, confirmado contra Security Advisor.
 
 ---
 

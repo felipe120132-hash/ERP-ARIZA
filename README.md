@@ -84,14 +84,16 @@ Ejecuta un flujo end-to-end completo usando los servicios ya implementados:
 
 ## Estado actual
 
+**Modelo y Controlador completos, validados (`npm run validar:modelo`, `npm run probar:servicios`) y endurecidos en seguridad (Supabase Security Advisor revisado). Frontend pendiente de construir.**
+
 | Capa | Contenido | Estado |
 |---|---|---|
 | **Modelo** | 11 tablas + 2 vistas — schemas Zod, tipos TypeScript, validación con `npm run validar:modelo` | ✅ Completo y validado |
-| **Controlador** | 7 servicios (productos, clientes, remisiones, cartera, gastos, documentos, OneDrive) + AuthContext + RutaProtegida + 4 RPCs en Supabase (`crear_remision`, `registrar_abono`, `anular_remision`, `actualizar_pdf_remision`) — validado con `npm run probar:servicios` (8 pasos) | ✅ Completo y validado |
-| **Frontend** | Páginas, componentes, UI | 🔲 Pendiente de construir |
+| **Controlador** | 7 servicios (productos, clientes, remisiones, cartera, gastos, documentos, OneDrive) + AuthContext + RutaProtegida + RPCs en Supabase (`crear_remision`, `registrar_abono`, `anular_remision`, `actualizar_pdf_remision`, `resumen_financiero_mensual`) — validado con `npm run probar:servicios` (8 pasos) | ✅ Completo y validado |
+| **Seguridad** | RLS activado/forzado, rol `anon` aislado con 0 permisos, `search_path` inmutable, vista con `security_invoker`, RPCs con permisos por rol | 🛡️ Endurecido (Security Advisor) |
+| **Frontend** | Páginas, componentes, interfaz de usuario | 🔲 Pendiente de construir |
 
-El equipo de frontend puede arrancar directamente consumiendo los servicios en `src/services/`.
-Ver el inventario completo en [docs/guia_frontend.md](docs/guia_frontend.md).
+👉 **Punto de partida para el equipo de Frontend:** Consulta [docs/guia_frontend.md](docs/guia_frontend.md) para ver el inventario completo de servicios, tipos, firmas, ejemplos de uso y manejo de autenticación.
 
 ---
 

@@ -16,8 +16,8 @@
 - **Archivos / PDFs:** la base de datos **nunca** almacena binarios. Los documentos (remisiones en PDF, facturas DIAN, cotizaciones) se suben a Microsoft OneDrive vía Microsoft Graph API, y en PostgreSQL solo se guarda el enlace en una columna `TEXT` (`pdf_url`, `onedrive_url`).
 - **Imágenes de producto:** se almacenan en **Supabase Storage**, no en OneDrive ni en la base de datos. El bucket `productos-imagenes` es privado; en `productos.imagen_path` solo se guarda la ruta del objeto (ej. `sku/ABC123.jpg`), y el frontend obtiene la imagen llamando a `supabase.storage.from('productos-imagenes').createSignedUrl(path, expiresIn)` — nunca una URL pública fija, porque el bucket no es público.
 - **Listas de estados (`CHECK`):** siempre en mayúsculas sostenidas, ej. `'PENDIENTE'`, `'PAGADA'`, `'ANULADA'`, `'CONTADO'`, `'CREDITO'`, `'TIENDA'`, `'DISTRIBUIDOR'`, `'ADMIN'`, `'VENDEDOR'`.
-- **Seguridad (RLS):** toda tabla tiene `ROW LEVEL SECURITY` activado y forzado (`FORCE ROW LEVEL SECURITY`). El rol `anon` no tiene ningún privilegio (`REVOKE ALL ... FROM anon`); todo el acceso pasa por `authenticated`, filtrado según el rol de negocio (`ADMIN` / `VENDEDOR`) almacenado en `perfiles`.
-- **Lógica transaccional en el motor:** el descuento de stock, el cálculo de IVA por línea, la resolución de precio por cliente y la actualización de cartera **no** se calculan en React — viven en triggers y funciones RPC de PostgreSQL, invocadas desde el frontend con `supabase.rpc(...)`.
+- **Seguridad (RLS):** toda tabla tiene `ROW LEVEL SECURITY` activado y forzado (`FORCE ROW LEVEL SECURITY`). El rol `anon` no tiene ningún privilegio (`REVOKE ALL ... FROM anon`); todo el acceso pasa por `authenticated`, filtrado según el rol de negocio (`ADMIN` / `VENDEDOR`) almacenado en `perfiles`. Todas las funciones RPC y triggers operan con `search_path` fijo inmutable (`SET search_path = public, pg_temp`), y los permisos `EXECUTE` están revocados de `PUBLIC` y limitados exclusivamente a `authenticated` (nunca `anon`).
+- **Lógica transaccional en el motor:** el descuento de stock, el cálculo de IVA por línea, la resolución de precio por cliente y la actualización de cartera **no** se calculan en React — viven en triggers y funciones RPC de PostgreSQL, invocadas desde el frontend con `supabase.rpc(...)`. Las funciones que ejecutan mutaciones críticas usan `SECURITY DEFINER` con search_path explícito.
 
 ---
 
@@ -225,7 +225,9 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 |---|---|---|---|
 | `crear_remision` | `p_cliente_id UUID, p_tipo_pago TEXT, p_items JSONB, p_aplica_iva BOOLEAN = TRUE` | `UUID` (id de la remisión) | Resuelve precio (especial > distribuidor/tienda), calcula IVA por línea según la tasa de cada producto, respeta el toggle de IVA, e inserta encabezado + detalles en una transacción atómica. |
 | `registrar_abono` | `p_cliente_id UUID, p_monto NUMERIC, p_metodo_pago TEXT = 'EFECTIVO', p_remision_id UUID = NULL` | `UUID` (id del abono) | Registra un pago a la cartera de un cliente; descuenta `saldo_cartera` vía trigger. |
-| `resumen_financiero_mensual` | `p_mes DATE` | Tabla: `total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto` | Calcula la utilidad neta del mes y si los gastos superaron el presupuesto configurado. |
+| `resumen_financiero_mensual` | `p_mes DATE` | Tabla: `total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto` | Calcula la utilidad neta del mes y si los gastos superaron el presupuesto configurado (exclusivo rol `ADMIN`). |
+| `anular_remision` | `p_remision_id UUID` | `VOID` | Marca la remisión como ANULADA. Triggers reingresan stock y revierten cartera automáticamente (`SECURITY DEFINER`). |
+| `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a VENDEDOR). |
 
 ---
 

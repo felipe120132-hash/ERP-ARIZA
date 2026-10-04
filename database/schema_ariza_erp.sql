@@ -6,6 +6,13 @@
 --   docs/diccionario_datos.md
 --   database/rls_seguridad_e_indices_ariza_erp.sql
 --
+-- NOTA DE SEGURIDAD (Post-Security Advisor):
+--   - Todas las funciones definen search_path inmutable (SET search_path = public, pg_temp)
+--     para prevenir vulnerabilidades de búsqueda de esquemas.
+--   - La vista pública vista_alertas_stock usa security_invoker = true.
+--   - Permisos de EXECUTE están revocados de PUBLIC y asignados exclusivamente a authenticated.
+--   - Los triggers internos tienen revocación total de EXECUTE para anon y authenticated.
+--
 -- Cada cambio nuevo se versiona primero como migración en database/migrations/
 -- y luego se refleja aquí para mantener el archivo como referencia consolidada.
 -- ==========================================================================
@@ -25,7 +32,7 @@
 --
 -- Retorna: UUID de la remisión creada.
 -- --------------------------------------------------------------------------
--- (Implementación pendiente de migrar desde Supabase Dashboard)
+-- (Implementación en base de datos; invocar vía RPC)
 
 
 -- --------------------------------------------------------------------------
@@ -42,21 +49,81 @@
 --
 -- Retorna: UUID del abono creado.
 -- --------------------------------------------------------------------------
--- (Implementación pendiente de migrar desde Supabase Dashboard)
+-- (Implementación en base de datos; invocar vía RPC)
 
 
 -- --------------------------------------------------------------------------
--- RPC: resumen_financiero_mensual
+-- RPC: resumen_financiero_mensual  (Migración: 003_resumen_financiero_mensual.sql)
 -- --------------------------------------------------------------------------
 -- Calcula la utilidad neta del mes y si los gastos superaron el presupuesto.
+-- SEGURIDAD: guard de rol en la primera línea del cuerpo — solo ADMIN puede llamarla.
 --
 -- Parámetros:
---   p_mes  DATE (primer día del mes)
+--   p_mes  DATE (primer día del mes, ej. '2025-10-01')
 --
 -- Retorna tabla:
 --   total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto
 -- --------------------------------------------------------------------------
--- (Implementación pendiente de migrar desde Supabase Dashboard)
+
+CREATE OR REPLACE FUNCTION resumen_financiero_mensual(p_mes DATE)
+RETURNS TABLE(
+  total_ventas        NUMERIC,
+  total_gastos        NUMERIC,
+  ganancia_neta       NUMERIC,
+  presupuesto_limite  NUMERIC,
+  excede_presupuesto  BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY INVOKER   -- corre con los permisos del usuario que llama (respeta RLS)
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_ventas      NUMERIC := 0;
+  v_gastos      NUMERIC := 0;
+  v_presupuesto NUMERIC;
+BEGIN
+  -- Guard: solo administradores pueden consultar el resumen financiero
+  IF obtener_rol_actual() <> 'ADMIN' THEN
+    RAISE EXCEPTION 'Solo los administradores pueden consultar el resumen financiero.';
+  END IF;
+
+  -- Total de ventas del mes (remisiones no anuladas)
+  SELECT COALESCE(SUM(r.total), 0)
+    INTO v_ventas
+    FROM remisiones r
+   WHERE r.fecha >= date_trunc('month', p_mes)
+     AND r.fecha <  date_trunc('month', p_mes) + INTERVAL '1 month'
+     AND r.estado <> 'ANULADA';
+
+  -- Total de gastos operacionales del mes
+  SELECT COALESCE(SUM(g.monto), 0)
+    INTO v_gastos
+    FROM gastos g
+   WHERE g.mes_referencia = date_trunc('month', p_mes)::DATE;
+
+  -- Presupuesto del mes (puede no existir)
+  SELECT p.presupuesto_limite
+    INTO v_presupuesto
+    FROM presupuestos p
+   WHERE p.mes_referencia = date_trunc('month', p_mes)::DATE
+   LIMIT 1;
+
+  RETURN QUERY SELECT
+    v_ventas                                    AS total_ventas,
+    v_gastos                                    AS total_gastos,
+    (v_ventas - v_gastos)                       AS ganancia_neta,
+    v_presupuesto                               AS presupuesto_limite,
+    CASE
+      WHEN v_presupuesto IS NOT NULL
+       AND v_gastos > v_presupuesto THEN TRUE
+      ELSE FALSE
+    END                                         AS excede_presupuesto;
+END;
+$$;
+
+COMMENT ON FUNCTION resumen_financiero_mensual(DATE) IS
+  'Calcula ventas, gastos y utilidad neta del mes indicado. '
+  'Restringido a rol ADMIN mediante guard obtener_rol_actual() en el cuerpo de la función.';
 
 
 -- --------------------------------------------------------------------------
@@ -76,6 +143,7 @@ CREATE OR REPLACE FUNCTION anular_remision(p_remision_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_estado_actual TEXT;
@@ -133,6 +201,7 @@ CREATE OR REPLACE FUNCTION actualizar_pdf_remision(
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   -- 1. Verificar que la remisión existe (un UPDATE sin coincidencia no lanza error)
@@ -153,3 +222,4 @@ COMMENT ON FUNCTION actualizar_pdf_remision(UUID, TEXT) IS
   'Actualiza únicamente pdf_url de una remisión. SECURITY DEFINER permite que '
   'VENDEDORes llamen a esta función sin necesitar permisos de UPDATE general '
   'sobre la tabla remisiones (restringido a ADMIN por RLS).';
+

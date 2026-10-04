@@ -128,13 +128,25 @@ ariza-erp/
 
 ## 6. Lo que todavía no está resuelto (para no asumir que falta por error)
 
-- **Generación y subida de PDF de remisión a OneDrive:** requiere una función serverless (Edge Function) para el intercambio de tokens OAuth2 con Microsoft Graph API. No se ha implementado — se aborda cuando el equipo llegue a esa parte.
+- **Edge Functions de OneDrive en producción:** los archivos `onedrive-auth`, `onedrive-refresh` y `onedriveService.ts` ya están implementados; pendiente el registro de la app en Azure AD y el despliegue a Supabase.
 - **MFA para el rol ADMIN:** decidido pero pendiente de configurar en Supabase Auth.
-- **Conexión del repo a Supabase vía GitHub Integration:** pendiente a propósito hasta que el esquema esté más estable.
+- **Leaked Password Protection:** pendiente de activar, requiere plan Pro de Supabase (no disponible en plan Free).
+- **Conexión del repo a Supabase vía GitHub Integration:** pendiente a propósito hasta que el frontend esté en marcha.
 
 ---
 
-## 7. Variables de entorno necesarias
+## 7. Seguridad aplicada (Post-Security Advisor)
+
+El esquema de base de datos y la capa de acceso fueron auditados y endurecidos contra Supabase Security Advisor (resultado: **0 Errors**, Warnings reducidos de 36 a solo advertencias intencionalmente aceptadas):
+- **Aislamiento total del rol `anon`:** `REVOKE ALL` sobre tablas, secuencias y rutinas. Sin sesión iniciada, el acceso es nulo.
+- **RPCs y Triggers protegidos:** permisos `EXECUTE` revocados de `PUBLIC` y otorgados únicamente a `authenticated` para funciones RPC de negocio. Las funciones trigger internas tienen `REVOKE EXECUTE` para `anon` y `authenticated`.
+- **Inyección de esquema mitigada:** todas las funciones operan con `SET search_path = public, pg_temp`.
+- **Vistas seguras:** `vista_alertas_stock` configurada con `security_invoker = true` para respetar las políticas RLS del usuario que consulta.
+- **Eliminación de INSERTs directos:** `remisiones`, `detalles_remision` y `abonos_cartera` no permiten inserción directa desde PostgREST; la mutación ocurre de forma atómica y validada dentro de sus RPCs.
+
+---
+
+## 8. Variables de entorno necesarias
 
 ```
 VITE_SUPABASE_URL=https://<tu-proyecto>.supabase.co
