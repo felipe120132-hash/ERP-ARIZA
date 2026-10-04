@@ -82,8 +82,8 @@ DECLARE
   v_gastos      NUMERIC := 0;
   v_presupuesto NUMERIC;
 BEGIN
-  -- Guard: solo administradores pueden consultar el resumen financiero
-  IF obtener_rol_actual() <> 'ADMIN' THEN
+  -- Guard: solo administradores pueden consultar el resumen financiero (seguro ante NULL)
+  IF obtener_rol_actual() IS DISTINCT FROM 'ADMIN' THEN
     RAISE EXCEPTION 'Solo los administradores pueden consultar el resumen financiero.';
   END IF;
 
@@ -127,11 +127,12 @@ COMMENT ON FUNCTION resumen_financiero_mensual(DATE) IS
 
 
 -- --------------------------------------------------------------------------
--- RPC: anular_remision  (Migración: 001_anular_remision.sql)
+-- RPC: anular_remision  (Migración: 001_anular_remision.sql / 004_fix_null_role_checks.sql)
 -- --------------------------------------------------------------------------
 -- Marca una remisión como ANULADA. Los triggers existentes
 -- (trg_reingresar_stock_por_anulacion) se encargan de reingresar stock y
 -- revertir cartera automáticamente al detectar el UPDATE de estado.
+-- Solo accesible por usuarios con rol ADMIN.
 --
 -- Parámetros:
 --   p_remision_id  UUID
@@ -148,6 +149,11 @@ AS $$
 DECLARE
   v_estado_actual TEXT;
 BEGIN
+  -- 0. Guard: solo administradores pueden anular remisiones (seguro ante NULL)
+  IF obtener_rol_actual() IS DISTINCT FROM 'ADMIN' THEN
+    RAISE EXCEPTION 'Solo los administradores pueden anular remisiones.';
+  END IF;
+
   -- 1. Buscar la remisión y bloquear la fila para evitar condiciones de carrera
   SELECT estado INTO v_estado_actual
   FROM remisiones

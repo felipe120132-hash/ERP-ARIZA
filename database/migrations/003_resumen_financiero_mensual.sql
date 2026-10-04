@@ -1,4 +1,4 @@
-﻿-- ==========================================================================
+-- ==========================================================================
 -- Migración 003: resumen_financiero_mensual (con guard de rol ADMIN)
 -- ==========================================================================
 -- Crea/reemplaza la función RPC resumen_financiero_mensual.
@@ -26,8 +26,8 @@ DECLARE
   v_gastos      NUMERIC := 0;
   v_presupuesto NUMERIC;
 BEGIN
-  -- Guard: solo administradores pueden consultar el resumen financiero
-  IF obtener_rol_actual() <> 'ADMIN' THEN
+  -- Guard: solo administradores pueden consultar el resumen financiero (seguro ante NULL)
+  IF obtener_rol_actual() IS DISTINCT FROM 'ADMIN' THEN
     RAISE EXCEPTION 'Solo los administradores pueden consultar el resumen financiero.';
   END IF;
 
