@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ModulePending from "./ModulePending";
+import PresupuestoEditor from "@/components/PresupuestoEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,7 @@ export default function Finanzas() {
   return perfil?.rol === "ADMIN" ? <FinanzasAdmin /> : <ModulePending />;
 }
 function FinanzasAdmin() {
+  const [budgetMonth, setBudgetMonth] = useState<string | null>(null);
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const raw = params.get("mes") ?? currentMonth(),
@@ -166,6 +168,23 @@ function FinanzasAdmin() {
                 : "Dentro del presupuesto"}
           </span>
         )}
+        {summary && summary.presupuesto_limite != null && !loading && (
+          <div>
+            <small>
+              {summary.total_gastos > summary.presupuesto_limite
+                ? "Exceso sobre el límite"
+                : "Disponible para gastos"}
+            </small>
+            <strong>
+              {formatCOP(
+                Math.abs(summary.presupuesto_limite - summary.total_gastos),
+              )}
+            </strong>
+          </div>
+        )}
+        <Button variant="outline" onClick={() => setBudgetMonth(month)}>
+          Gestionar presupuesto
+        </Button>
       </div>
       <section className="catalog-panel">
         <div className="catalog-panel-heading">
@@ -291,6 +310,15 @@ function FinanzasAdmin() {
           userId={user.id}
           month={month}
           onClose={() => setOpen(false)}
+          onRecorded={() => setAttempt((x) => x + 1)}
+        />
+      )}
+      {budgetMonth && user && (
+        <PresupuestoEditor
+          key={`${user.id}:${budgetMonth}`}
+          month={budgetMonth}
+          userId={user.id}
+          onClose={() => setBudgetMonth(null)}
           onRecorded={() => setAttempt((x) => x + 1)}
         />
       )}

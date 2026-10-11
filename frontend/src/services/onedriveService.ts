@@ -1,355 +1,109 @@
-/**
- * src/services/onedriveService.ts
- *
- * Servicio de integración con Microsoft OneDrive / Graph API.
- *
- * Flujo OAuth2 (Authorization Code Flow):
- *   1. Usuario llama a iniciarAutenticacionOneDrive() → es redirigido al login de Microsoft.
- *   2. Microsoft redirige de vuelta a VITE_ONEDRIVE_REDIRECT_URI con un ?code=...
- *   3. El componente captura ese código y llama al Edge Function `onedrive-auth`
- *      (a través de intercambiarCodigoPorToken) para obtener access_token y refresh_token.
- *   4. Los tokens se guardan en localStorage. subirArchivoOneDrive los usa automáticamente,
- *      renovándolos mediante el Edge Function `onedrive-refresh` si han expirado.
- *
- * Variables de entorno del FRONTEND requeridas (en .env, con prefijo VITE_):
- *   VITE_ONEDRIVE_CLIENT_ID    → App (client) ID de la app registrada en Azure AD
- *   VITE_ONEDRIVE_REDIRECT_URI → URI de redirección registrada en Azure AD (ej. http://localhost:5173/onedrive/callback)
- *   VITE_SUPABASE_URL          → URL del proyecto Supabase (ya existente)
- *
- * NOTA: CLIENT_SECRET y TENANT_ID son secrets del Edge Function, NUNCA del frontend.
- */
-
+import { z } from "zod";
 import { supabase } from "./supabaseClient";
 
-// ── Constantes de configuración ──────────────────────────────────────────────
+const prefix = "ariza:onedrive:";
+const pendingKey = `${prefix}pending`;
+const tokenSchema = z.object({ access_token: z.string().min(1), refresh_token: z.string().min(1), expires_in: z.number().positive().finite(), token_type: z.string().regex(/^bearer$/i) });
+const pendingSchema = z.object({ state: z.string().min(32), userId: z.string(), createdAt: z.number(), redirectUri: z.string() });
+const storedSchema = tokenSchema.extend({ expiresAt: z.number() });
+let generation = 0;
+const exchanges = new Map<string, Promise<void>>();
 
-const CLIENT_ID = import.meta.env.VITE_ONEDRIVE_CLIENT_ID as string | undefined;
-const REDIRECT_URI = import.meta.env.VITE_ONEDRIVE_REDIRECT_URI as
-  string | undefined;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-
-// Scopes necesarios: leer/escribir archivos + renovar token sin interacción del usuario
-const SCOPES = "Files.ReadWrite offline_access User.Read";
-
-// Claves de localStorage para persistir tokens entre sesiones de la pestaña
-const LS_ACCESS_TOKEN = "onedrive_access_token";
-const LS_REFRESH_TOKEN = "onedrive_refresh_token";
-const LS_EXPIRES_AT = "onedrive_expires_at"; // timestamp Unix en ms
-
-// ── Tipos internos ───────────────────────────────────────────────────────────
-
-interface TokenSet {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  token_type: string;
-}
-
-interface OneDriveUploadResult {
-  /** URL de descarga directa del archivo subido, lista para guardar en la BD. */
-  url: string;
-  /** Nombre del archivo tal como quedó en OneDrive. */
-  nombre: string;
-  /** Tamaño del archivo en bytes. */
-  tamano: number;
-}
-
-interface ServiceResult<T> {
-  data: T | null;
-  error: string | null;
-}
-
-// ── Helpers de token storage ─────────────────────────────────────────────────
-
-function guardarTokens(tokens: TokenSet): void {
-  const expiresAt = Date.now() + tokens.expires_in * 1000;
-  localStorage.setItem(LS_ACCESS_TOKEN, tokens.access_token);
-  localStorage.setItem(LS_REFRESH_TOKEN, tokens.refresh_token);
-  localStorage.setItem(LS_EXPIRES_AT, String(expiresAt));
-}
-
-function leerAccessToken(): string | null {
-  return localStorage.getItem(LS_ACCESS_TOKEN);
-}
-
-function leerRefreshToken(): string | null {
-  return localStorage.getItem(LS_REFRESH_TOKEN);
-}
-
-function tokenExpirado(): boolean {
-  const expiresAt = localStorage.getItem(LS_EXPIRES_AT);
-  if (!expiresAt) return true;
-  // Considera expirado si faltan menos de 5 minutos
-  return Date.now() > Number(expiresAt) - 5 * 60 * 1000;
-}
-
-function limpiarTokens(): void {
-  localStorage.removeItem(LS_ACCESS_TOKEN);
-  localStorage.removeItem(LS_REFRESH_TOKEN);
-  localStorage.removeItem(LS_EXPIRES_AT);
-}
-
-// ── Llamadas a Edge Functions ─────────────────────────────────────────────────
-
-/**
- * Llama al Edge Function `onedrive-auth` para intercambiar un authorization code
- * por un access_token y refresh_token.
- *
- * Debes llamar a esta función desde el componente que recibe el callback de Microsoft
- * (la ruta VITE_ONEDRIVE_REDIRECT_URI), extrayendo `code` de los query params.
- */
-export async function intercambiarCodigoPorToken(
-  code: string,
-): Promise<ServiceResult<TokenSet>> {
-  if (!REDIRECT_URI) {
-    return {
-      data: null,
-      error:
-        "VITE_ONEDRIVE_REDIRECT_URI no está configurada en el archivo .env.",
-    };
-  }
-
+export function configuracionOneDrive(): { error: string | null; clientId: string; redirectUri: string } {
+  const clientId = import.meta.env.VITE_ONEDRIVE_CLIENT_ID?.trim() ?? "";
+  const redirectUri = import.meta.env.VITE_ONEDRIVE_REDIRECT_URI?.trim() ?? "";
+  if (!clientId || !redirectUri) return { clientId, redirectUri, error: "Falta configurar la conexión con Microsoft. Contacta al administrador." };
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const reqHeaders = new Headers({ "Content-Type": "application/json" });
-    if (sessionData.session?.access_token) {
-      reqHeaders.set(
-        "Authorization",
-        `Bearer ${sessionData.session.access_token}`,
-      );
-    }
-
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/onedrive-auth`, {
-      method: "POST",
-      headers: reqHeaders,
-      body: JSON.stringify({ code, redirect_uri: REDIRECT_URI }),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      const msg =
-        typeof json.error === "string"
-          ? json.error
-          : (json.error?.error_description ??
-            "Error al intercambiar el código con Microsoft.");
-      return { data: null, error: msg };
-    }
-
-    guardarTokens(json as TokenSet);
-    return { data: json as TokenSet, error: null };
-  } catch {
-    return {
-      data: null,
-      error: "Error de red al contactar el servidor de autenticación.",
-    };
-  }
+    const uri = new URL(redirectUri);
+    if (uri.origin !== location.origin || uri.pathname !== "/onedrive/callback" || uri.search || uri.hash || uri.username || uri.password || (uri.protocol !== "https:" && !(uri.protocol === "http:" && ["localhost", "127.0.0.1"].includes(uri.hostname)))) throw new Error();
+    return { clientId, redirectUri, error: null };
+  } catch { return { clientId, redirectUri, error: "La dirección de retorno de Microsoft no corresponde a esta aplicación. Contacta al administrador." }; }
 }
 
-/**
- * Renueva el access_token usando el refresh_token almacenado.
- * Microsoft rota el refresh_token en cada uso, así que el nuevo se guarda automáticamente.
- * Si el refresh_token también ha expirado (máximo 90 días), retorna error
- * y limpia los tokens para forzar un nuevo login.
- */
-async function renovarToken(): Promise<ServiceResult<string>> {
-  const refreshToken = leerRefreshToken();
-  if (!refreshToken) {
-    limpiarTokens();
-    return {
-      data: null,
-      error:
-        "No hay sesión de OneDrive activa. Vuelve a iniciar la autenticación.",
-    };
-  }
-
-  try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const reqHeaders = new Headers({ "Content-Type": "application/json" });
-    if (sessionData.session?.access_token) {
-      reqHeaders.set(
-        "Authorization",
-        `Bearer ${sessionData.session.access_token}`,
-      );
-    }
-
-    const response = await fetch(
-      `${SUPABASE_URL}/functions/v1/onedrive-refresh`,
-      {
-        method: "POST",
-        headers: reqHeaders,
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      },
-    );
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      // Refresh token expirado o revocado → limpiar y forzar nuevo login
-      limpiarTokens();
-      const msg =
-        typeof json.error === "string"
-          ? json.error
-          : "La sesión de OneDrive ha expirado. Vuelve a iniciar la autenticación.";
-      return { data: null, error: msg };
-    }
-
-    const tokens = json as TokenSet;
-    guardarTokens(tokens);
-    return { data: tokens.access_token, error: null };
-  } catch {
-    return {
-      data: null,
-      error: "Error de red al renovar la sesión de OneDrive.",
-    };
-  }
-}
-
-/**
- * Obtiene un access_token válido, renovándolo automáticamente si ha expirado.
- */
-async function obtenerAccessTokenValido(): Promise<ServiceResult<string>> {
-  const token = leerAccessToken();
-
-  if (token && !tokenExpirado()) {
-    return { data: token, error: null };
-  }
-
-  if (leerRefreshToken()) {
-    return renovarToken();
-  }
-
-  return {
-    data: null,
-    error:
-      "No hay sesión de OneDrive activa. Llama a iniciarAutenticacionOneDrive() primero.",
-  };
-}
-
-// ── API pública ──────────────────────────────────────────────────────────────
-
-/**
- * Redirige al usuario a la pantalla de login de Microsoft para autorizar
- * el acceso a OneDrive.
- *
- * Requiere que VITE_ONEDRIVE_CLIENT_ID y VITE_ONEDRIVE_REDIRECT_URI
- * estén definidas en el .env del frontend.
- *
- * Después del login, Microsoft redirige a VITE_ONEDRIVE_REDIRECT_URI?code=...
- * Tu componente de callback debe capturar ese código y llamar a
- * intercambiarCodigoPorToken(code).
- */
-export function iniciarAutenticacionOneDrive(): void {
-  if (!CLIENT_ID) {
-    throw new Error(
-      "[ArizaERP] VITE_ONEDRIVE_CLIENT_ID no está configurada. " +
-        "Agrégala al .env del frontend tras registrar la app en Azure AD.",
-    );
-  }
-  if (!REDIRECT_URI) {
-    throw new Error(
-      "[ArizaERP] VITE_ONEDRIVE_REDIRECT_URI no está configurada. " +
-        "Agrégala al .env del frontend y regístrala en Azure AD como redirect URI válida.",
-    );
-  }
-
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    response_type: "code",
-    redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
-    // response_mode: 'query' es el default para authorization_code flow
-  });
-
-  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
-
-  window.location.href = authUrl;
-}
-
-/**
- * Sube un archivo a OneDrive mediante Microsoft Graph API y retorna la URL
- * de descarga directa, lista para guardar en remisiones.pdf_url o
- * documentos.onedrive_url.
- *
- * @param path  Ruta dentro de OneDrive donde se guardará el archivo,
- *              relativa a la carpeta raíz del usuario.
- *              Ejemplo: "ArizaERP/Remisiones/REM-0042.pdf"
- * @param file  El objeto File o Blob a subir.
- */
-export async function subirArchivoOneDrive(
-  path: string,
-  file: File | Blob,
-): Promise<ServiceResult<OneDriveUploadResult>> {
-  // 1. Obtener access_token válido (renueva automáticamente si es necesario)
-  const { data: accessToken, error: tokenError } =
-    await obtenerAccessTokenValido();
-  if (tokenError || !accessToken) {
-    return {
-      data: null,
-      error: tokenError ?? "No se pudo obtener el token de OneDrive.",
-    };
-  }
-
-  // 2. Subir el archivo mediante la API de upload de Graph
-  //    Para archivos <= 4 MB se usa PUT simple. Para archivos más grandes habría
-  //    que usar upload sessions, pero los PDFs de remisiones raramente superan ese límite.
-  const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
-  const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodedPath}:/content`;
-
-  let uploadResponse: Response;
-  try {
-    uploadResponse = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type":
-          file instanceof File ? file.type : "application/octet-stream",
-      },
-      body: file,
-    });
-  } catch {
-    return {
-      data: null,
-      error:
-        "Error de red al subir el archivo a OneDrive. Verifica tu conexión.",
-    };
-  }
-
-  const responseJson = await uploadResponse.json();
-
-  if (!uploadResponse.ok) {
-    const msg =
-      responseJson?.error?.message ??
-      `Error ${uploadResponse.status} al subir el archivo a OneDrive.`;
-    return { data: null, error: msg };
-  }
-
-  // 3. Extraer la URL de descarga directa (@microsoft.graph.downloadUrl)
-  const downloadUrl: string =
-    responseJson["@microsoft.graph.downloadUrl"] ?? responseJson.webUrl ?? "";
-
-  if (!downloadUrl) {
-    return {
-      data: null,
-      error: "Archivo subido pero no se pudo obtener la URL de descarga.",
-    };
-  }
-
-  return {
-    data: {
-      url: downloadUrl,
-      nombre: responseJson.name as string,
-      tamano: responseJson.size as number,
-    },
-    error: null,
-  };
-}
-
-/**
- * Cierra la sesión de OneDrive eliminando los tokens del localStorage.
- * No revoca el token en Microsoft (para eso el usuario debe ir a
- * https://account.microsoft.com/privacy/app-access).
- */
 export function cerrarSesionOneDrive(): void {
-  limpiarTokens();
+  generation++;
+  exchanges.clear();
+  for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key);
+  for (const key of ["onedrive_access_token", "onedrive_refresh_token", "onedrive_expires_at"]) localStorage.removeItem(key);
+}
+
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") cerrarSesionOneDrive();
+});
+
+function stored(userId: string) {
+  try { return storedSchema.parse(JSON.parse(sessionStorage.getItem(`${prefix}${userId}`) ?? "null")); }
+  catch { return null; }
+}
+export function tieneConexionOneDrive(userId: string): boolean { return stored(userId) !== null; }
+
+async function sessionFor(userId: string) {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session || data.session.user.id !== userId) throw new Error("Tu sesión cambió. Vuelve a conectar OneDrive desde Documentos.");
+  return data.session;
+}
+
+export async function iniciarAutenticacionOneDrive(userId: string): Promise<void> {
+  const config = configuracionOneDrive();
+  if (config.error) throw new Error(config.error);
+  await sessionFor(userId);
+  cerrarSesionOneDrive();
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, "0")).join("");
+  sessionStorage.setItem(pendingKey, JSON.stringify({ state, userId, createdAt: Date.now(), redirectUri: config.redirectUri }));
+  const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: config.redirectUri, response_type: "code", response_mode: "query", scope: "Files.ReadWrite offline_access User.Read", state });
+  location.assign(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
+}
+
+async function exchange(endpoint: string, body: object, userId: string) {
+  const version = generation;
+  const session = await sessionFor(userId);
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new Error("Microsoft no pudo completar la conexión. Vuelve a iniciarla desde Documentos.");
+  const parsed = tokenSchema.safeParse(await response.json());
+  if (!parsed.success) throw new Error("El servidor no devolvió una sesión válida de OneDrive.");
+  await sessionFor(userId);
+  if (version !== generation) throw new Error("La conexión fue cancelada. Vuelve a iniciarla desde Documentos.");
+  sessionStorage.setItem(`${prefix}${userId}`, JSON.stringify({ ...parsed.data, expiresAt: Date.now() + parsed.data.expires_in * 1000 }));
+  return parsed.data.access_token;
+}
+
+// Cache the in-flight result for StrictMode; consume state before the one-use code is sent.
+export function completarAutenticacionOneDrive(query: string, userId: string): Promise<void> {
+  const key = `${userId}:${query}`;
+  const existing = exchanges.get(key);
+  if (existing) return existing;
+  const result = (async () => {
+    const params = new URLSearchParams(query);
+    const config = configuracionOneDrive();
+    if (config.error) throw new Error(config.error);
+    let pending;
+    try { pending = pendingSchema.parse(JSON.parse(sessionStorage.getItem(pendingKey) ?? "null")); } catch { throw new Error("Esta conexión ya se utilizó o no se inició en esta pestaña. Iníciala desde Documentos."); }
+    if (params.getAll("state").length !== 1 || params.get("state") !== pending.state || pending.userId !== userId || pending.redirectUri !== config.redirectUri || Date.now() - pending.createdAt > 600000 || pending.createdAt > Date.now()) throw new Error("No pudimos validar esta conexión. Vuelve a iniciarla desde Documentos.");
+    sessionStorage.removeItem(pendingKey);
+    if (params.has("error")) throw new Error(params.get("error") === "access_denied" ? "Cancelaste la autorización de Microsoft. Puedes conectar OneDrive cuando lo necesites." : "Microsoft rechazó la autorización. Vuelve a iniciarla desde Documentos.");
+    const code = params.get("code");
+    if (!code || params.getAll("code").length !== 1) throw new Error("Microsoft no devolvió un código válido. Vuelve a iniciar la conexión.");
+    try { await exchange("onedrive-auth", { code, redirect_uri: config.redirectUri }, userId); }
+    catch (error) { if (error instanceof TypeError || (error instanceof DOMException)) throw new Error("No pudimos confirmar la conexión. Inicia una nueva autorización desde Documentos."); throw error; }
+  })();
+  exchanges.set(key, result);
+  return result;
+}
+
+export async function subirArchivoOneDrive(path: string, file: File | Blob) {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user.id;
+    const tokens = userId ? stored(userId) : null;
+    if (!userId || !tokens) throw new Error("Conecta OneDrive desde Documentos.");
+    const accessToken = tokens.expiresAt > Date.now() + 60000 ? tokens.access_token : await exchange("onedrive-refresh", { refresh_token: tokens.refresh_token }, userId);
+    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${path.split("/").map(encodeURIComponent).join("/")}:/content`, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/octet-stream" }, body: file });
+    if (!response.ok) throw new Error("No se pudo subir el archivo a OneDrive.");
+    const json = z.object({ webUrl: z.string().url(), name: z.string(), size: z.number() }).parse(await response.json());
+    return { data: { url: json.webUrl, nombre: json.name, tamano: json.size }, error: null };
+  } catch { return { data: null, error: "No se pudo completar la subida. Comprueba la conexión con OneDrive." }; }
 }

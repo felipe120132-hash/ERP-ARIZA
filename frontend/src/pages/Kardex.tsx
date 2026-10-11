@@ -8,7 +8,9 @@ import {
   type TipoMovimiento,
 } from "@/services/inventarioService";
 import type { Producto, Kardex } from "@/types/schemas";
+import { useAuth } from "@/context/AuthContext";
 export default function KardexPage() {
+  const { perfil } = useAuth();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const raw = params.get("tipo") ?? "",
@@ -82,6 +84,13 @@ export default function KardexPage() {
           <p>La trazabilidad de cada entrada, salida y ajuste registrado.</p>
         </div>
         <div className="order-actions">
+          {perfil?.rol === "ADMIN" && product?.activo && !loading && !error && (
+            <Button asChild>
+              <Link to={`/inventario/${id}/movimiento`}>
+                Preparar movimiento
+              </Link>
+            </Button>
+          )}
           <Button asChild variant="outline">
             <Link to="/inventario">
               <ArrowLeft size={16} />

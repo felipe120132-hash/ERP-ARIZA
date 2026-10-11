@@ -11,12 +11,15 @@ const AdministrarProducto = lazy(() => import("@/pages/AdministrarProducto"));
 const Resumen = lazy(() => import("@/pages/Resumen"));
 const Finanzas = lazy(() => import("@/pages/Finanzas"));
 const Inventario = lazy(() => import("@/pages/Inventario"));
+const PrepararMovimiento = lazy(() => import("@/pages/PrepararMovimiento"));
 const Kardex = lazy(() => import("@/pages/Kardex"));
 const Cartera = lazy(() => import("@/pages/Cartera"));
 const ClienteDetalle = lazy(() => import("@/pages/ClienteDetalle"));
 const Remisiones = lazy(() => import("@/pages/Remisiones"));
 const DetalleRemision = lazy(() => import("@/pages/DetalleRemision"));
 const Catalogo = lazy(() => import("@/pages/Catalogo"));
+const Documentos = lazy(() => import("@/pages/Documentos"));
+const OneDriveCallback = lazy(() => import("@/pages/OneDriveCallback"));
 export default function App() {
   return (
     <BrowserRouter>
@@ -26,6 +29,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/onedrive/callback" element={<Suspense fallback={<div role="status">Verificando conexión…</div>}><OneDriveCallback /></Suspense>} />
           <Route element={<RutaProtegida />}>
             <Route element={<AppLayout />}>
               <Route
@@ -122,6 +126,14 @@ export default function App() {
                   </Suspense>
                 }
               />
+              <Route
+                path="inventario/:id/movimiento"
+                element={
+                  <Suspense fallback={<div role="status">Cargando…</div>}>
+                    <PrepararMovimiento />
+                  </Suspense>
+                }
+              />
               <Route index element={<Navigate to="/catalogo" replace />} />
               <Route
                 path="catalogo"
@@ -153,7 +165,8 @@ export default function App() {
                   </Suspense>
                 }
               />
-              {["documentos", "*"].map((path) => (
+              <Route path="documentos" element={<Suspense fallback={<div role="status">Cargando documentos…</div>}><Documentos /></Suspense>} />
+              {["*"].map((path) => (
                 <Route key={path} path={path} element={<ModulePending />} />
               ))}
             </Route>

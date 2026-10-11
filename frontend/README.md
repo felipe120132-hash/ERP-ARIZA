@@ -117,3 +117,25 @@ Se verificó además login y lectura del catálogo real con la cuenta de prueba 
 - Cada foto recibe una ruta única productos/<UUID>/<UUID>.<ext>; primero se sube y luego se asocia condicionalmente sobre la ruta anterior. No se sobrescribe ni elimina la foto anterior. Como Storage y Postgres no forman una transacción, una asociación fallida puede dejar un objeto sin usar; su limpieza requiere un proceso de mantenimiento posterior que verifique referencias antes de borrar.
 - Las respuestas inciertas bloquean otro envío, persisten en sessionStorage por usuario y producto, y ofrecen consultar el resultado. Las pruebas de escritura y Storage usan respuestas simuladas, sin crear productos ni subir fotos a la base real. La verificación final de permisos y subida real queda para una base de pruebas configurada con el bucket privado.
 - Doce pruebas nuevas cubren altas, edición/desactivación, errores de SKU y permisos, paginación incompleta, precisión, imágenes inválidas/grandes, acceso vendedor, recuperación de respuestas inciertas, asociación fallida, foto visible en catálogo y adaptación móvil.
+
+## Preparación de inventario — 10 de octubre de 2026
+
+- Disponible para ADMIN desde el kardex del producto: preparación de entradas (unidades recibidas) y ajustes (existencias contadas), motivo, diferencia y stock previsto. Revisión adaptable a escritorio y móvil.
+- **El registro sigue deshabilitado.** No hay mutaciones ni RPC inventada. La función puede existir directamente en Supabase según el usuario, pero no aparece en el repositorio y no fue posible consultar el proyecto configurado por un error DNS ENOTFOUND.
+- Contrato propuesto y garantías para contrastar con el backend: docs/INVENTARIO-CONTRATO-PENDIENTE.md. Obtener URL vigente y SQL de la función antes de conectar el envío. No se ejecutaron movimientos reales.
+
+## Presupuestos mensuales — 10 de octubre de 2026
+
+- Finanzas → Gestionar presupuesto, solo ADMIN: consulta el mes seleccionado, crea o edita el límite, permite cero y exige revisión antes del envío. El mes queda fijo al abrir el formulario.
+- Usa la tabla presupuestos documentada (mes_referencia único). Inserta solo mes e importe; al editar compara id, mes e importe anterior para detectar cambios concurrentes. No usa upsert ni sobrescribe acuerdos de otro mes.
+- Validación del administrador activo antes de consultar/guardar; permisos RLS como autoridad final. Límites NUMERIC(12,2), sin negativos ni más de dos decimales.
+- Guardados inciertos se conservan por usuario y mes en sessionStorage. Consulta del resultado antes de permitir otro envío. Tras guardar se vuelve a consultar el resumen financiero; si falla, no se muestra un saldo inventado.
+- Finanzas muestra disponible o exceso respecto al límite usando el resumen recibido. No altera ventas ni gastos. Pruebas de escritura simuladas; validación real pendiente mientras Supabase no sea accesible.
+
+### Conexión restablecida — 10 de octubre de 2026
+
+Autenticación con perfil ADMIN activo, lecturas de productos, kardex y presupuestos, y RPC de resumen financiero verificadas contra Supabase. No hubo escrituras de negocio. OpenAPI exige clave secreta (HTTP 401), por lo que no permite descubrir con la clave pública las firmas de las funciones de inventario. El remoto main aún no documenta esa RPC: solicitar su SQL al equipo antes de habilitar entradas/ajustes. La limitación DNS anterior ya no se reproduce.
+
+## OneDrive — callback local
+
+Implementados Documentos y /onedrive/callback, validación de state y errores, y fallback de Vercel. Faltan los valores públicos de Azure y la validación real. Ver docs/ONEDRIVE-CONFIGURACION.md. La subida/listado de documentos sigue pendiente. Incluido en esta entrega; confirmar el despliegue de Vercel después del push.

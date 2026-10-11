@@ -1,6 +1,6 @@
 # Pendientes del frontend — cierre de primera fase
 
-Actualizado: 4 de octubre de 2026.
+Actualizado: 10 de octubre de 2026.
 
 ## Ya implementado
 
@@ -8,11 +8,11 @@ Login y sesión; catálogo y carrito; creación y consulta de remisiones; PDF e 
 
 ## Próxima fase, en orden sugerido
 
-1. **Administración de clientes implementada localmente:** crear, editar, activar/desactivar y gestionar precios especiales por producto/cliente. Pendiente publicar esta segunda entrega y validarla con escrituras controladas en una base de pruebas.
-2. **Administración de productos e imágenes implementada localmente:** crear, editar, activar/desactivar, cargar o reemplazar fotos y configurar stock mínimo. Pendiente publicar y validar escrituras y Storage en una base de pruebas. La limpieza de fotos antiguas o subidas sin asociar queda para mantenimiento controlado.
-3. **Entradas y ajustes de inventario:** formularios, permisos y confirmaciones. Verificar primero que el backend ofrezca operaciones atómicas que actualicen stock y kardex juntos; no editar stock directamente desde el frontend.
+1. **Administración de clientes implementada localmente:** crear, editar, activar/desactivar y gestionar precios especiales por producto/cliente. Publicada en main y desplegada en Vercel. Pendiente validarla con escrituras controladas en una base de pruebas.
+2. **Administración de productos e imágenes implementada localmente:** crear, editar, activar/desactivar, cargar o reemplazar fotos y configurar stock mínimo. Publicada en main y desplegada en Vercel. Pendiente validar escrituras y Storage en una base de pruebas. La limpieza de fotos antiguas o subidas sin asociar queda para mantenimiento controlado.
+3. **Entradas y ajustes de inventario:** formulario de preparación y revisión implementado localmente; registro deshabilitado. El usuario indica que la función podría existir en Supabase. Supabase ya responde y las consultas de lectura fueron verificadas. OpenAPI está restringido a claves secretas: obtener del equipo la definición SQL de la operación atómica. Ver docs/INVENTARIO-CONTRATO-PENDIENTE.md. Falta conectar el envío, idempotencia y recuperación, y probar stock/kardex juntos.
 4. **Documentos y OneDrive:** centro documental, autenticación Microsoft, callback, subida, asociación con cliente/remisión, consulta y recuperación de errores. Verificar configuración y despliegue de las Edge Functions. El PDF local ya funciona; aún no se sube ni se persiste su enlace.
-5. **Presupuestos:** creación y edición del límite mensual para ADMIN. Hoy solo se consulta.
+5. **Presupuestos implementados localmente:** crear y editar límite mensual desde Finanzas para ADMIN, con revisión, detección de conflictos y recuperación de respuestas inciertas. Lectura real de presupuestos y resumen financiero verificada. Pendiente validar escrituras en una base de pruebas y confirmar el despliegue de esta entrega.
 6. **Cierre de integración y despliegue:** ejecutar escenarios de escritura controlados en una base de pruebas, validar RLS/roles, revisar listas grandes y paginación del servidor, configurar despliegue SPA y variables públicas, y prueba final de escritorio/móvil.
 
 ## Dependencias del backend que siguen abiertas
@@ -37,3 +37,10 @@ npm run dev
 Validación: `npm run build`. Para `npm test`, mantener Vite en `http://127.0.0.1:5173` y tener Chrome instalado. Las pruebas interceptan Supabase. Confirmar ventas, abonos, gastos o anulaciones desde la aplicación normal sí modifica la base conectada.
 
 No se incluyen credenciales, node_modules, dist, capturas de datos reales ni archivos temporales.
+
+
+
+
+## Actualización OneDrive — 10 de octubre de 2026
+
+Callback e inicio de conexión implementados localmente. Pendiente: obtener VITE_ONEDRIVE_CLIENT_ID y VITE_ONEDRIVE_REDIRECT_URI, configurar Azure/Supabase/Vercel, publicar y probar autorización real. Después conectar subida, listado y asociación de documentos. Guía: docs/ONEDRIVE-CONFIGURACION.md.

@@ -1,0 +1,7 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "headers": [{ "source": "/onedrive/callback", "headers": [
+    { "key": "Cache-Control", "value": "no-store" },
+    { "key": "Referrer-Policy", "value": "no-referrer" }
+  ] }]
+}

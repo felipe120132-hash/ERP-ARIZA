@@ -3056,3 +3056,54 @@ body {
     flex-wrap: wrap;
   }
 }
+.movement-editor {
+  margin-top: 24px;
+  max-width: 1000px;
+}
+.movement-editor textarea {
+  width: 100%;
+  border: 1px solid #cadde9;
+  border-radius: 10px;
+  padding: 12px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  background: white;
+}
+.movement-review {
+  margin-top: 24px;
+}
+.movement-review dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.movement-review dt {
+  font-size: 12px;
+  color: #466781;
+}
+.movement-review dd {
+  font-size: 25px;
+  color: #103c5c;
+  margin-top: 10px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .movement-review dl {
+    grid-template-columns: 1fr;
+  }
+  .movement-editor .inventory-product-summary {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+}
+.finance-budget {
+  flex-wrap: wrap;
+  gap: 22px;
+}
+.finance-budget small {
+  display: block;
+  color: #52738b;
+  font-size: 12px;
+}
