@@ -51,7 +51,7 @@ export async function iniciarAutenticacionOneDrive(userId: string): Promise<void
   const state = Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, "0")).join("");
   sessionStorage.setItem(pendingKey, JSON.stringify({ state, userId, createdAt: Date.now(), redirectUri: config.redirectUri }));
   const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: config.redirectUri, response_type: "code", response_mode: "query", scope: "Files.ReadWrite offline_access User.Read", state });
-  location.assign(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
+  location.assign(`https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?${params}`);
 }
 
 async function exchange(endpoint: string, body: object, userId: string) {

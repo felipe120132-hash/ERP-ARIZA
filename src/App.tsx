@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/layout/Navbar';
@@ -10,6 +10,7 @@ import CrearPedido from './pages/CrearPedido';
 import Cartera from './pages/Cartera';
 import Gastos from './pages/Gastos';
 import Dashboard from './pages/Dashboard';
+import OneDriveCallback from './pages/OneDriveCallback';
 import './styles/App.css';
 
 export const App: React.FC = () => {
@@ -63,6 +64,14 @@ export const App: React.FC = () => {
                   element={
                     <RutaProtegida>
                       <Cartera />
+                    </RutaProtegida>
+                  }
+                />
+                <Route
+                  path="/onedrive/callback"
+                  element={
+                    <RutaProtegida>
+                      <OneDriveCallback />
                     </RutaProtegida>
                   }
                 />

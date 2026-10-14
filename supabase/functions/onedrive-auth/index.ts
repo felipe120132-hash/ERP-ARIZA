@@ -1,11 +1,15 @@
-﻿// supabase/functions/onedrive-auth/index.ts
+// supabase/functions/onedrive-auth/index.ts
 //
 // Edge Function: Intercambio de Authorization Code → Access Token (OAuth2)
 // con Microsoft Graph API.
 //
-// IMPORTANTE: Las variables CLIENT_ID, CLIENT_SECRET y TENANT_ID se configuran
+// Usa el endpoint «consumers» de Microsoft Identity Platform, que acepta
+// exclusivamente cuentas Microsoft personales (outlook.com, hotmail.com,
+// live.com — OneDrive personal). No se necesita TENANT_ID.
+//
+// IMPORTANTE: Las variables CLIENT_ID y CLIENT_SECRET se configuran
 // en el dashboard de Supabase (Settings → Edge Functions → Secrets), o con:
-//   supabase secrets set CLIENT_ID=xxx CLIENT_SECRET=yyy TENANT_ID=zzz
+//   supabase secrets set CLIENT_ID=xxx CLIENT_SECRET=yyy
 //
 // Estas variables se obtienen al registrar la aplicación en Azure AD:
 //   https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps
@@ -33,18 +37,18 @@ serve(async (req: Request) => {
   }
 
   // ── Leer variables de entorno del Edge Function ──────────────────────────
-  // CLIENT_ID, CLIENT_SECRET y TENANT_ID se configuran como secrets en Supabase,
+  // CLIENT_ID y CLIENT_SECRET se configuran como secrets en Supabase,
   // NUNCA con prefijo VITE_ (esas son solo para el frontend) ni hardcodeadas aquí.
+  // TENANT_ID no se usa: el endpoint /consumers/ acepta solo cuentas personales.
   const clientId     = Deno.env.get('CLIENT_ID');
   const clientSecret = Deno.env.get('CLIENT_SECRET');
-  const tenantId     = Deno.env.get('TENANT_ID');
 
-  if (!clientId || !clientSecret || !tenantId) {
+  if (!clientId || !clientSecret) {
     return new Response(
       JSON.stringify({
         error:
           'Configuración incompleta del servidor. ' +
-          'Verifica que CLIENT_ID, CLIENT_SECRET y TENANT_ID estén ' +
+          'Verifica que CLIENT_ID y CLIENT_SECRET estén ' +
           'definidos como secrets del Edge Function en el dashboard de Supabase.',
       }),
       {
@@ -78,7 +82,7 @@ serve(async (req: Request) => {
   }
 
   // ── Intercambio code → token con Microsoft Identity Platform ─────────────
-  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const tokenUrl = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
 
   const params = new URLSearchParams({
     client_id:     clientId,

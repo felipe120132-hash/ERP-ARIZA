@@ -3,6 +3,10 @@
  *
  * Servicio de integración con Microsoft OneDrive / Graph API.
  *
+ * Usa el endpoint «consumers» de Microsoft Identity Platform, que acepta
+ * exclusivamente cuentas Microsoft personales (outlook.com, hotmail.com,
+ * live.com — OneDrive personal). No se necesita TENANT_ID.
+ *
  * Flujo OAuth2 (Authorization Code Flow):
  *   1. Usuario llama a iniciarAutenticacionOneDrive() → es redirigido al login de Microsoft.
  *   2. Microsoft redirige de vuelta a VITE_ONEDRIVE_REDIRECT_URI con un ?code=...
@@ -16,7 +20,7 @@
  *   VITE_ONEDRIVE_REDIRECT_URI → URI de redirección registrada en Azure AD (ej. http://localhost:5173/onedrive/callback)
  *   VITE_SUPABASE_URL          → URL del proyecto Supabase (ya existente)
  *
- * NOTA: CLIENT_SECRET y TENANT_ID son secrets del Edge Function, NUNCA del frontend.
+ * NOTA: CLIENT_SECRET es un secret del Edge Function, NUNCA del frontend.
  */
 
 import { supabase } from './supabaseClient';
@@ -240,7 +244,7 @@ export function iniciarAutenticacionOneDrive(): void {
   });
 
   const authUrl =
-    `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+    `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?${params.toString()}`;
 
   window.location.href = authUrl;
 }

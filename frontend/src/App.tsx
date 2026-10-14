@@ -29,8 +29,8 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/onedrive/callback" element={<Suspense fallback={<div role="status">Verificando conexión…</div>}><OneDriveCallback /></Suspense>} />
           <Route element={<RutaProtegida />}>
+            <Route path="/onedrive/callback" element={<Suspense fallback={<div role="status">Verificando conexión…</div>}><OneDriveCallback /></Suspense>} />
             <Route element={<AppLayout />}>
               <Route
                 path="productos"
