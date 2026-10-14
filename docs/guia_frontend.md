@@ -19,6 +19,7 @@
    - [carteraService](#carteraservice)
    - [gastosService](#gastosservice)
    - [documentosService](#documentosservice)
+   - [inventarioService](#inventarioservice)
    - [onedriveService](#onedriveservice)
 4. [Autenticación: AuthContext y useAuth](#autenticación-authcontext-y-useauth)
 5. [Protección de rutas: RutaProtegida](#protección-de-rutas-rutaprotegida)
@@ -205,6 +206,60 @@ interface FiltrosDocumentos {
 
 ---
 
+### `inventarioService`
+
+**Archivo:** `src/services/inventarioService.ts`
+
+Gestiona las entradas de mercancía, ajustes de existencias y consulta del historial de kardex. Requiere rol `ADMIN` para mutaciones (la RPC valida `es_admin_activo()`).
+
+| Función | Firma | Retorno | Ejemplo |
+|---|---|---|---|
+| `registrarMovimiento` | `(input: MovimientoInventarioInput) => Promise<ServiceResponse<MovimientoInventarioRespuesta>>` | Registra una entrada o ajuste de inventario vía RPC atómica e idempotente | `const { data } = await inventarioService.registrarMovimiento(input)` |
+| `listarKardexProducto` | `(productoId: string) => Promise<ServiceResponse<Kardex[]>>` | Historial inmutable de movimientos del producto (orden descendente) | `const { data } = await inventarioService.listarKardexProducto(productoId)` |
+
+**Ejemplo de uso (Entrada de mercancía):**
+
+```tsx
+import { inventarioService } from '../services/inventarioService';
+
+const { data, error } = await inventarioService.registrarMovimiento({
+  p_producto_id: producto.id,
+  p_tipo: 'ENTRADA',
+  p_cantidad: 20,
+  p_motivo: 'Recepción factura proveedor #450',
+  p_idempotency_key: crypto.randomUUID(),
+});
+
+if (error) {
+  toast.error(error); // Mensaje en español listo para mostrar
+  return;
+}
+
+toast.success(`Entrada registrada. Nuevo stock: ${data.stock_resultante}`);
+```
+
+**Ejemplo de uso (Ajuste por conteo físico):**
+
+```tsx
+const { data, error } = await inventarioService.registrarMovimiento({
+  p_producto_id: producto.id,
+  p_tipo: 'AJUSTE',
+  p_cantidad: 15,                          // Existencia física contada en bodega
+  p_motivo: 'Ajuste de inventario físico mensual',
+  p_idempotency_key: crypto.randomUUID(),
+  p_stock_esperado: producto.stock_actual,  // Valida que el stock no haya cambiado concurrentemente
+});
+
+if (error) {
+  toast.error(error);
+  return;
+}
+
+toast.success(`Ajuste aplicado. Nuevo stock: ${data.stock_resultante} (diferencia: ${data.cantidad})`);
+```
+
+---
+
 ### `onedriveService`
 
 **Archivo:** `src/services/onedriveService.ts`
@@ -360,7 +415,7 @@ interface RutaProtegidaProps {
 | `PrecioCliente` | Precio especial de un cliente para un producto |
 | `Remision` | Fila de la tabla `remisiones` |
 | `DetalleRemision` | Línea de ítem de una remisión |
-| `Kardex` | Movimiento de inventario |
+| `Kardex` | Movimiento de inventario (incluye `registrado_por` e `idempotency_key`) |
 | `AbonoCartera` | Abono a cuenta de un cliente |
 | `Gasto` | Gasto operacional |
 | `Presupuesto` | Presupuesto mensual |
@@ -368,15 +423,17 @@ interface RutaProtegidaProps {
 | `AlertaStock` | Fila de la vista `vista_alertas_stock` |
 | `ResumenFinancieroResult` | Resultado de la RPC `resumen_financiero_mensual` |
 
-**Archivo:** `src/types/rpcSchemas.ts` — tipos de entrada para las RPCs
+**Archivo:** `src/types/rpcSchemas.ts` — tipos de entrada y respuesta para las RPCs
 
-| Tipo | Función destino |
+| Tipo | Función destino / Origen |
 |---|---|
 | `CrearRemisionInput` | `remisionesService.crearRemision()` |
 | `RemisionItem` | Ítem dentro de `CrearRemisionInput.p_items` |
 | `RegistrarAbonoInput` | `carteraService.registrarAbono()` |
 | `AnularRemisionInput` | (usado internamente por `anularRemision`) |
 | `ResumenFinancieroInput` | (usado internamente por `resumenFinancieroMensual`) |
+| `MovimientoInventarioInput` | `inventarioService.registrarMovimiento()` |
+| `MovimientoInventarioRespuesta` | Retorno de `inventarioService.registrarMovimiento()` |
 
 ---
 

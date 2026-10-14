@@ -61,3 +61,62 @@ export const ResumenFinancieroInputSchema = z.object({
   }),
 });
 export type ResumenFinancieroInput = z.infer<typeof ResumenFinancieroInputSchema>;
+
+// ---------------------------------------------------------------------------
+// 5. registrar_movimiento_inventario
+// ---------------------------------------------------------------------------
+export const MovimientoInventarioInputSchema = z
+  .object({
+    p_producto_id:    uuidSchema,
+    p_tipo:           z.enum(['ENTRADA', 'AJUSTE'], {
+      error: 'El tipo de movimiento debe ser ENTRADA o AJUSTE.',
+    }),
+    p_cantidad:       z.number({
+      message: 'La cantidad debe ser un número.',
+    }),
+    p_motivo:         z
+      .string({ message: 'El motivo es obligatorio.' })
+      .trim()
+      .min(5, { message: 'El motivo debe tener al menos 5 caracteres.' }),
+    p_idempotency_key: uuidSchema,
+    p_stock_esperado:  z.number().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.p_tipo === 'ENTRADA') {
+      if (data.p_cantidad <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'La cantidad para una ENTRADA debe ser mayor a 0.',
+          path: ['p_cantidad'],
+        });
+      }
+    } else if (data.p_tipo === 'AJUSTE') {
+      if (data.p_cantidad < 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'La cantidad contada para un AJUSTE no puede ser negativa.',
+          path: ['p_cantidad'],
+        });
+      }
+      if (data.p_stock_esperado === undefined || data.p_stock_esperado === null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'El stock esperado es obligatorio cuando el tipo de movimiento es AJUSTE.',
+          path: ['p_stock_esperado'],
+        });
+      }
+    }
+  });
+export type MovimientoInventarioInput = z.infer<typeof MovimientoInventarioInputSchema>;
+
+export const MovimientoInventarioRespuestaSchema = z.object({
+  kardex_id:        uuidSchema,
+  producto_id:      uuidSchema,
+  tipo_movimiento:  z.enum(['ENTRADA', 'AJUSTE']),
+  cantidad:         z.number(),
+  stock_anterior:   z.number(),
+  stock_resultante: z.number(),
+  repetido:         z.boolean(),
+});
+export type MovimientoInventarioRespuesta = z.infer<typeof MovimientoInventarioRespuestaSchema>;
+

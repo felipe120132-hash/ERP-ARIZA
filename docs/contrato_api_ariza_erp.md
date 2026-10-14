@@ -64,7 +64,7 @@ Todas se consumen con `supabase.from('nombre_tabla')`. La columna "Escritura" in
 | `precios_cliente` | Cualquier autenticado | Solo `ADMIN` | Rara vez se consulta directo; normalmente el precio ya viene resuelto por el RPC `crear_remision` |
 | `remisiones` | Cualquier autenticado | INSERT: cualquiera (pero **usar el RPC `crear_remision`**, no insertar directo — ver sección 4); UPDATE (anular): solo `ADMIN` | — |
 | `detalles_remision` | Cualquier autenticado | Igual que remisiones — **nunca insertar directo**, siempre vía `crear_remision` | Insertar manual salta el cálculo de precio/IVA y descuadra el encabezado |
-| `kardex` | Cualquier autenticado | Ninguna (solo lo escriben los triggers) | Tabla de solo lectura desde el frontend, sin excepción |
+| `kardex` | Cualquier autenticado | Ninguna directa (triggers de ventas o RPC `registrar_movimiento_inventario`) | Tabla de solo lectura para SELECT; entradas y ajustes manuales se ejecutan exclusivamente vía RPC |
 | `abonos_cartera` | Cualquier autenticado | INSERT: cualquiera (mejor vía RPC `registrar_abono`) | — |
 | `gastos` | Solo `ADMIN` | Solo `ADMIN` | Un `VENDEDOR` ni siquiera debe ver este menú en la UI |
 | `presupuestos` | Solo `ADMIN` | Solo `ADMIN` | — |
@@ -83,7 +83,7 @@ const { data, error } = await supabase
 
 ## 4. Funciones RPC (la lógica de negocio real vive aquí)
 
-Se llaman con `supabase.rpc('nombre_funcion', { parametros })`. Estas son las únicas tres — todo lo demás son operaciones CRUD simples de la sección 3.
+Se llaman con `supabase.rpc('nombre_funcion', { parametros })`. Todo lo demás son operaciones CRUD simples de la sección 3.
 
 ### `crear_remision`
 Crea un pedido completo: resuelve precio por cliente, calcula IVA por línea, descuenta stock, valida todo en una transacción.
@@ -119,7 +119,58 @@ const { data, error } = await supabase.rpc('resumen_financiero_mensual', {
 });
 // data[0] -> { total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto }
 ```
-Solo `ADMIN` obtiene datos reales (las tablas `gastos`/`presupuestos` que consulta por dentro están restringidas); un `VENDEDOR` recibiría el cálculo con `total_gastos = 0`.
+Solo administradores activos (`ADMIN`) obtienen datos reales (protegido por guard `es_admin_activo()`).
+
+### `anular_remision`
+Marca una remisión como ANULADA. Los triggers de base de datos reingresan stock y revierten cartera automáticamente. Exclusivo para administradores activos.
+
+```javascript
+const { error } = await supabase.rpc('anular_remision', {
+  p_remision_id: 'uuid-de-la-remision',
+});
+```
+
+### `registrar_movimiento_inventario`
+Registra entradas de inventario o ajustes físicos de existencias de forma atómica e idempotente. Exclusivo para administradores activos (`ADMIN`).
+
+```javascript
+const { data, error } = await supabase.rpc('registrar_movimiento_inventario', {
+  p_producto_id: 'uuid-del-producto',
+  p_tipo: 'ENTRADA',                      // 'ENTRADA' | 'AJUSTE'
+  p_cantidad: 10,                         // ENTRADA: unidades a sumar (> 0). AJUSTE: existencia contada (>= 0)
+  p_motivo: 'Ingreso factura proveedor', // Justificación (mínimo 5 caracteres tras trim)
+  p_idempotency_key: 'uuid-v4',          // Clave de idempotencia única para la operación
+  p_stock_esperado: null,                 // Obligatorio en AJUSTE con el stock leído antes del conteo
+});
+```
+
+**Respuesta JSONB (`data`):**
+```json
+{
+  "kardex_id": "uuid-del-kardex",
+  "producto_id": "uuid-del-producto",
+  "tipo_movimiento": "ENTRADA",
+  "cantidad": 10,
+  "stock_anterior": 0,
+  "stock_resultante": 10,
+  "repetido": false
+}
+```
+
+- **Idempotencia:** Si se reintenta el envío con la misma clave `p_idempotency_key` para el mismo producto y tipo, la función retorna el mismo JSONB con `"repetido": true` sin duplicar el movimiento ni alterar el stock nuevamente.
+- **Ajustes:** En movimientos de tipo `'AJUSTE'`, `cantidad` en la respuesta y en `kardex` almacena la diferencia con signo (`p_cantidad - stock_anterior`), y el stock del producto pasa a ser exactamente la existencia contada (`p_cantidad`). Si `p_stock_esperado` difiere del stock bloqueado al momento de aplicar la transacción, se rechaza la operación para prevenir inconsistencias concurrentes.
+- **Errores esperables:**
+  - `"Solo administradores activos pueden registrar movimientos de inventario."`
+  - `"Tipo de movimiento inválido. Debe ser ENTRADA o AJUSTE."`
+  - `"La clave de idempotencia es obligatoria."`
+  - `"El motivo debe tener al menos 5 caracteres."`
+  - `"La cantidad para una ENTRADA debe ser mayor a cero."`
+  - `"La cantidad física contada para un AJUSTE no puede ser negativa."`
+  - `"El stock esperado es obligatorio para un AJUSTE."`
+  - `"El stock cambió desde que lo consultaste (ahora: X). Recuenta y vuelve a enviar."`
+  - `"La existencia contada coincide con el sistema; no hay nada que ajustar."`
+  - `"No se puede registrar una entrada para un producto inactivo."`
+  - `"La clave de idempotencia ya fue usada en otro movimiento."`
 
 ---
 

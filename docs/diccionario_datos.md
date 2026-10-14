@@ -140,17 +140,19 @@ Líneas del pedido. Cada línea guarda su propio precio e IVA resuelto, porque a
 
 ### 2.7 `kardex`
 
-Histórico inmutable de movimientos de inventario. Solo se escribe por triggers, nunca por `INSERT` directo del cliente.
+Histórico inmutable de movimientos de inventario. Escrito automáticamente por triggers de ventas y por la función RPC `registrar_movimiento_inventario` (entradas y ajustes manuales por ADMIN). Nunca por `INSERT` directo del cliente.
 
 | Campo / Propiedad API | Tipo de Dato | Nulo (Sí/No) | Clave (PK/FK/Check) | Descripción / Regla de Negocio |
 |---|---|---|---|---|
 | `id` | `UUID` | No | PK | Identificador del movimiento. |
 | `producto_id` | `UUID` | No | FK → `productos(id)` | Producto afectado. |
-| `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Remisión que originó el movimiento (nulo en ajustes manuales). |
+| `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Remisión que originó el movimiento (nulo en entradas y ajustes manuales). |
 | `tipo_movimiento` | `TEXT` | No | Check: `'ENTRADA'`, `'SALIDA'`, `'AJUSTE'` | Naturaleza del movimiento. |
-| `cantidad` | `NUMERIC(12,2)` | No | — | Cantidad movida (positiva). |
+| `cantidad` | `NUMERIC(12,2)` | No | — | Cantidad movida. En `ENTRADA` y `SALIDA` es positiva; en `AJUSTE` guarda la **diferencia con signo** (`conteo_físico - stock_anterior`), positiva si hay sobrante y negativa si hay faltante. |
 | `stock_resultante` | `NUMERIC(12,2)` | No | — | Foto del stock después de aplicar el movimiento. Útil para auditoría sin recalcular históricos. |
-| `observacion` | `TEXT` | Sí | — | Ej. `"Descuento por remisión"`, `"Reingreso por anulación de remisión"`. |
+| `observacion` | `TEXT` | Sí | — | Justificación o motivo del movimiento (ej. `"Descuento por remisión"`, `"Reingreso por anulación"`, `"Compra factura #123"`). Mínimo 5 caracteres en movimientos manuales. |
+| `registrado_por` | `UUID` | Sí | FK → `perfiles(id)` | Usuario administrador que registró el movimiento manual. Nulo en movimientos originados por triggers del sistema. |
+| `idempotency_key` | `UUID` | Sí | Unique parcial (`WHERE idempotency_key IS NOT NULL`) | Clave única generada por el frontend para garantizar idempotencia en la RPC `registrar_movimiento_inventario`. Nulo en triggers. |
 | `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Momento exacto del movimiento. |
 
 ---

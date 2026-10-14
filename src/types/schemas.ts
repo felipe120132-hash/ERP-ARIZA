@@ -118,6 +118,8 @@ export const kardexSchema = z.object({
   cantidad:          z.number(),
   stock_resultante:  z.number(),
   observacion:       z.string().nullable(),
+  registrado_por:    uuidSchema.nullable(),
+  idempotency_key:   uuidSchema.nullable(),
   created_at:        z.coerce.date(),
 });
 export type Kardex = z.infer<typeof kardexSchema>;
