@@ -1,16 +1,17 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { productosService } from "@/services/productosService";
 import type { Producto } from "@/types/schemas";
+import { inventarioService, ErrorMovimiento, movimientoInputSchema, type MovimientoInput } from "@/services/inventarioService";
 
 const units = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 2 });
 export default function PrepararMovimiento() {
-  const { perfil } = useAuth();
+  const { perfil, user } = useAuth();
   const { id } = useParams();
   if (perfil?.rol !== "ADMIN")
     return (
@@ -22,9 +23,54 @@ export default function PrepararMovimiento() {
         </Button>
       </div>
     );
-  return <Formulario key={id} id={id ?? ""} />;
+  return <Formulario key={`${user?.id}:${id}`} id={id ?? ""} userId={user!.id} />;
 }
-function Formulario({ id }: { id: string }) {
+function Formulario({ id, userId }: { id: string; userId: string }) {
+  const location = useLocation();
+  const storageKey = `ariza:movimiento:${userId}:${id}`;
+  const [recovery] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      if (!raw) return { data: null, corrupt: false };
+      const parsed = movimientoInputSchema.safeParse(JSON.parse(raw));
+      if (!parsed.success || parsed.data.p_producto_id !== id) return { data: null, corrupt: true };
+      return { data: parsed.data, corrupt: false };
+    } catch { return { data: null, corrupt: true }; }
+  });
+  const [pending, setPending] = useState<MovimientoInput | null>(recovery.data);
+  const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState("");
+  const sending = useRef(false);
+  const key = useRef(crypto.randomUUID());
+  async function guardar() {
+    if (sending.current || recovery.corrupt || (!pending && (!review || !product))) return;
+    const input: MovimientoInput = pending ?? {
+      p_producto_id: id, p_tipo: tipo, p_cantidad: Number(cantidad), p_motivo: motivo.trim(),
+      p_idempotency_key: key.current, p_stock_esperado: tipo === "AJUSTE" ? product!.stock_actual : null,
+    };
+    sending.current = true; setBusy(true); setError(""); setSuccess("");
+    try {
+      // Persist the exact payload before sending. An uncertain request must never be edited.
+      sessionStorage.setItem(storageKey, JSON.stringify(input));
+      setPending(input);
+    } catch {
+      setError("No podemos conservar la solicitud en esta pestaña. Habilita el almacenamiento antes de registrar.");
+      sending.current = false; setBusy(false); return;
+    }
+    try {
+      const r = await inventarioService.registrarMovimiento(input);
+      sessionStorage.removeItem(storageKey); setPending(null);
+      key.current = crypto.randomUUID(); setCantidad(""); setMotivo(""); setReview(false);
+      setSuccess(`${r.repetido ? "Movimiento recuperado sin duplicarlo" : "Movimiento registrado"}. Stock resultante del movimiento: ${units(r.stock_resultante)} unidades.`);
+      setAttempt(x => x + 1);
+    } catch (e) {
+      if (e instanceof ErrorMovimiento && !e.incierto) {
+        sessionStorage.removeItem(storageKey); setPending(null); setReview(false);
+        if (e.conflicto) { setCantidad(""); setAttempt(x => x + 1); }
+      }
+      setError(e instanceof Error ? e.message : "No pudimos confirmar el movimiento. Reintenta la misma solicitud.");
+    } finally { sending.current = false; setBusy(false); }
+  }
   const [product, setProduct] = useState<Producto | null>(null),
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(""),
@@ -105,13 +151,11 @@ function Formulario({ id }: { id: string }) {
           <Link to={`/inventario/${id}`}>Volver al kardex</Link>
         </Button>
       </div>
-      <div className="warning-box" role="status">
-        <strong>Registro pendiente de habilitación</strong>
-        <p>
-          Puedes preparar y revisar el movimiento. Todavía no se guarda ni
-          modifica existencias: falta habilitar esta operación en el sistema.
-        </p>
-      </div>
+      {success && <div className="warning-box" role="status">{success}</div>}
+      {location.state?.initialEntry && pending && <p role="status" className="warning-box">El producto ya fue creado. Falta confirmar su ingreso inicial; reintenta el mismo movimiento para recuperarlo sin duplicar existencias.</p>}
+      {recovery.corrupt && <p role="alert">No pudimos recuperar una solicitud anterior. Revisa el kardex con el administrador antes de registrar otro movimiento.</p>}
+      {pending && <div className="warning-box" role="status"><strong>Movimiento pendiente de confirmar</strong><p>{pending.p_tipo}: {units(pending.p_cantidad)} unidades. {pending.p_motivo}</p><p>Conservamos los datos originales para evitar duplicados, incluso al recargar esta pestaña.</p><Button disabled={busy} onClick={() => void guardar()}>{busy ? "Confirmando…" : "Reintentar mismo movimiento"}</Button></div>}
+      {error && <p className="error-box" role="alert">{error}</p>}
       {loading ? (
         <div className="empty-state" role="status">
           Consultando existencias…
@@ -137,6 +181,7 @@ function Formulario({ id }: { id: string }) {
               </div>
               <Button
                 variant="outline"
+                disabled={busy || !!pending}
                 onClick={() => setAttempt((x) => x + 1)}
               >
                 Actualizar existencias
@@ -151,7 +196,7 @@ function Formulario({ id }: { id: string }) {
             <form onSubmit={revisar}>
               <fieldset
                 className="client-editor-fields"
-                disabled={!product.activo}
+                disabled={!product.activo || busy || !!pending || recovery.corrupt}
               >
                 <div>
                   <Label htmlFor="movimiento-tipo">Tipo de movimiento</Label>
@@ -217,11 +262,6 @@ function Formulario({ id }: { id: string }) {
                 </div>
               </fieldset>
             </form>
-            {error && (
-              <p className="error-box" role="alert">
-                {error}
-              </p>
-            )}
             {review && (
               <div className="client-review movement-review">
                 <span className="eyebrow">VISTA PREVIA · NO REGISTRADO</span>
@@ -251,7 +291,7 @@ function Formulario({ id }: { id: string }) {
                   Esta vista previa usa las existencias consultadas. El
                   resultado definitivo deberá verificarse al registrar.
                 </p>
-                <Button disabled>Registro no disponible</Button>
+                <Button disabled={busy || !!pending || recovery.corrupt} onClick={() => void guardar()}>Confirmar y registrar</Button>
               </div>
             )}
           </section>

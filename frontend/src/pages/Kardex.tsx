@@ -205,7 +205,7 @@ export default function KardexPage() {
                             : "Ajuste"}
                       </span>
                     </td>
-                    <td>{x.cantidad.toLocaleString("es-CO")}</td>
+                    <td>{x.tipo_movimiento === "AJUSTE" && x.cantidad > 0 ? "+" : ""}{x.cantidad.toLocaleString("es-CO")}</td>
                     <td className="balance-cell">
                       {x.stock_resultante.toLocaleString("es-CO")}
                     </td>

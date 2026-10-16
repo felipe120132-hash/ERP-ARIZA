@@ -22,8 +22,8 @@ test("preparación: entrada decimal y revisión no ejecutan escrituras", async (
   await page.getByRole("button", { name: "Revisar movimiento" }).click();
   await expect(page.getByTestId("stock-previsto")).toHaveText("12,25");
   await expect(
-    page.getByRole("button", { name: "Registro no disponible" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Confirmar y registrar" }),
+  ).toBeEnabled();
   expect(writes).toEqual([]);
   await page.screenshot({
     path: "output/frontend/movimiento-preparacion-desktop.png",

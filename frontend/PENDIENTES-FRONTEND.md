@@ -12,7 +12,7 @@ Login y sesión; catálogo y carrito; creación y consulta de remisiones; PDF e 
 2. **Administración de productos e imágenes implementada localmente:** crear, editar, activar/desactivar, cargar o reemplazar fotos y configurar stock mínimo. Publicada en main y desplegada en Vercel. Pendiente validar escrituras y Storage en una base de pruebas. La limpieza de fotos antiguas o subidas sin asociar queda para mantenimiento controlado.
 3. **Entradas y ajustes de inventario:** formulario de preparación y revisión implementado localmente; registro deshabilitado. El usuario indica que la función podría existir en Supabase. Supabase ya responde y las consultas de lectura fueron verificadas. OpenAPI está restringido a claves secretas: obtener del equipo la definición SQL de la operación atómica. Ver docs/INVENTARIO-CONTRATO-PENDIENTE.md. Falta conectar el envío, idempotencia y recuperación, y probar stock/kardex juntos.
 4. **Documentos y OneDrive:** centro documental, autenticación Microsoft, callback, subida, asociación con cliente/remisión, consulta y recuperación de errores. Verificar configuración y despliegue de las Edge Functions. El PDF local ya funciona; aún no se sube ni se persiste su enlace.
-5. **Presupuestos implementados localmente:** crear y editar límite mensual desde Finanzas para ADMIN, con revisión, detección de conflictos y recuperación de respuestas inciertas. Lectura real de presupuestos y resumen financiero verificada. Pendiente validar escrituras en una base de pruebas y confirmar el despliegue de esta entrega.
+5. **Presupuestos implementados localmente:** crear y editar límite mensual desde Finanzas para ADMIN, con revisión, detección de conflictos y recuperación de respuestas inciertas. Lectura real de presupuestos y resumen financiero verificada. Pendiente validar escrituras en una base de pruebas y publicar esta entrega.
 6. **Cierre de integración y despliegue:** ejecutar escenarios de escritura controlados en una base de pruebas, validar RLS/roles, revisar listas grandes y paginación del servidor, configurar despliegue SPA y variables públicas, y prueba final de escritorio/móvil.
 
 ## Dependencias del backend que siguen abiertas
@@ -44,3 +44,14 @@ No se incluyen credenciales, node_modules, dist, capturas de datos reales ni arc
 ## Actualización OneDrive — 10 de octubre de 2026
 
 Callback e inicio de conexión implementados localmente. Pendiente: obtener VITE_ONEDRIVE_CLIENT_ID y VITE_ONEDRIVE_REDIRECT_URI, configurar Azure/Supabase/Vercel, publicar y probar autorización real. Después conectar subida, listado y asociación de documentos. Guía: docs/ONEDRIVE-CONFIGURACION.md.
+
+
+## Actualización 14 de octubre de 2026 (sustituye el estado anterior)
+
+Inventario: registro conectado localmente a la RPC desplegada; 17 pruebas simuladas y prueba real exclusiva sobre SKU-PRUEBA con stock final 15, dos movimientos en kardex. Falta comprobar VENDEDOR real y publicar estos cambios de interfaz. Ver docs/INVENTARIO-INTEGRACION.md.
+
+OneDrive: valores públicos y consumers ya verificados en el build publicado; callback HTTP 200. Falta el contrato de cuenta empresarial con tokens en servidor y luego subida/listado/asociación. Ver docs/ONEDRIVE-CONFIGURACION.md. No se subieron documentos reales.
+
+## Estado vigente — 15 de octubre de 2026
+
+Documentos/OneDrive: implementación empresarial lista para publicar, incluyendo migración 006 y Edge Functions. Ya no falta escribir el contrato del servidor. Falta desplegarlo, configurar la clave de cifrado y verificar en staging/producción con la cuenta de la empresa. Ver docs/ONEDRIVE-DESPLIEGUE.md. No se han subido documentos reales. Siguen pendientes las comprobaciones reales de roles/RLS y los escenarios generales de integración indicados arriba.

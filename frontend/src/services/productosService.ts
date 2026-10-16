@@ -10,14 +10,15 @@ import {
 
 export const productosService = {
   /**
-   * Obtiene todos los productos del catálogo ordenados por nombre.
+   * Obtiene los productos ordenados por SKU, con orden numérico natural.
    */
   async listarProductos(): Promise<ServiceResponse<Producto[]>> {
     try {
       const { data, error } = await supabase
         .from("productos")
         .select("*")
-        .order("nombre");
+        .order("sku")
+        .order("id");
 
       if (error) {
         return { data: null, error: parsearErrorSupabase(error) };
@@ -31,7 +32,7 @@ export const productosService = {
         };
       }
 
-      return { data: parseResult.data, error: null };
+      return { data: parseResult.data.sort((a, b) => a.sku.localeCompare(b.sku, "es", { numeric: true, sensitivity: "base" }) || a.id.localeCompare(b.id)), error: null };
     } catch (err) {
       return { data: null, error: parsearErrorSupabase(err) };
     }

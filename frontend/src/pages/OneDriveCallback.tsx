@@ -14,15 +14,15 @@ export default function OneDriveCallback() {
     window.history.replaceState(window.history.state, "", window.location.pathname);
   }, []);
   useEffect(() => {
-    if (loading || !user || !perfil?.activo) return;
+    if (loading || !user || !perfil?.activo || perfil.rol !== "ADMIN") return;
     let active = true;
     completarAutenticacionOneDrive(query, user.id).then(
-      () => { if (active) setResult({ ok: true, message: "OneDrive quedó conectado para tu usuario en esta pestaña." }); },
+      () => { if (active) setResult({ ok: true, message: "El OneDrive de la empresa quedó conectado. El equipo ya puede consultar sus documentos." }); },
       (e: unknown) => { if (active) setResult({ ok: false, message: e instanceof Error ? e.message : "No pudimos completar la conexión. Vuelve a iniciarla desde Documentos." }); },
     );
     return () => { active = false; };
   }, [loading, user, perfil, query]);
-  const denied = !loading && (!user || !perfil?.activo);
+  const denied = !loading && (!user || !perfil?.activo || perfil.rol !== "ADMIN");
   return <main id="contenido" className="pending-panel" style={{ maxWidth: 700, margin: "8vh auto", padding: "clamp(24px, 5vw, 64px)" }}>
     <div className="pending-symbol"><Cloud size={38} /></div>
     <span className="eyebrow">DISTRIBUCIONES ARIZA / ONEDRIVE</span>

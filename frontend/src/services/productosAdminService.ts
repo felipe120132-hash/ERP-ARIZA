@@ -77,7 +77,7 @@ export const productosAdminService = {
       const rows = z.array(productoSchema).parse(data);
       all.push(...rows);
       if (all.length === count)
-        return all.sort((a, b) => a.nombre.localeCompare(b.nombre));
+        return all.sort((a, b) => a.sku.localeCompare(b.sku, "es", { numeric: true, sensitivity: "base" }) || a.id.localeCompare(b.id));
       if (!rows.length || all.length > count)
         throw new Error("No pudimos consultar el listado completo.");
     }

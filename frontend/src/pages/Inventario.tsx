@@ -251,7 +251,7 @@ export default function Inventario() {
                     <th>Existencias</th>
                     <th>Mínimo</th>
                     <th>Estado</th>
-                    <th>Historial</th>
+                    <th>Movimientos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -288,6 +288,7 @@ export default function Inventario() {
                             <ArrowUpRight size={18} />
                           </Link>
                         </Button>
+                        {perfil?.rol === "ADMIN" && x.activo && <Button asChild variant="outline" size="sm"><Link to={`/inventario/${x.id}/movimiento`} aria-label={`Modificar existencias de ${x.nombre}`}>Entrada / ajuste</Link></Button>}
                       </td>
                     </tr>
                   ))}

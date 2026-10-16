@@ -138,4 +138,19 @@ Autenticación con perfil ADMIN activo, lecturas de productos, kardex y presupue
 
 ## OneDrive — callback local
 
-Implementados Documentos y /onedrive/callback, validación de state y errores, y fallback de Vercel. Faltan los valores públicos de Azure y la validación real. Ver docs/ONEDRIVE-CONFIGURACION.md. La subida/listado de documentos sigue pendiente. Incluido en esta entrega; confirmar el despliegue de Vercel después del push.
+Implementados Documentos y /onedrive/callback, validación de state y errores, y fallback de Vercel. Faltan los valores públicos de Azure y la validación real. Ver docs/ONEDRIVE-CONFIGURACION.md. La subida/listado de documentos sigue pendiente. Cambios aún no publicados.
+
+
+## Integración del 14 de octubre de 2026
+
+Entradas y ajustes conectados localmente a registrar_movimiento_inventario, con recuperación idempotente y comprobación real en SKU-PRUEBA. Ver docs/INVENTARIO-INTEGRACION.md. Para desarrollar usar http://localhost:5173 (URI de Azure exacta). Estado actual de OneDrive: docs/ONEDRIVE-CONFIGURACION.md.
+
+## Productos y catálogo — 14 de octubre de 2026
+
+Categorías seleccionables: Comida, Liquidos, Accesorios, Equipos, Plantas y Hamsters. Origen: Nacional o Importado. Se conservan valores antiguos al editar sin cambiarlos. Catálogo, administración e inventario ordenados por SKU con comparación numérica. Las fotos llenan el marco del catálogo con recorte proporcional; el detalle conserva la imagen completa.
+
+Al crear se puede indicar cantidad inicial: primero se guarda la referencia, luego una ENTRADA mediante la RPC. Las operaciones son separadas; un ingreso incierto se recupera con la misma clave en Inventario, sin crear otro producto. Entrada/ajuste accesible desde Inventario y el editor. 28 pruebas simuladas aprobadas; no se crearon productos reales durante estas pruebas.
+
+## Entrega documental — 15 de octubre de 2026
+
+Centro documental empresarial implementado con backend service-only, cifrado de tokens, OAuth state/PKCE, carga PDF/JPG/PNG, descarga autenticada y recuperación de subidas. Esta versión requiere desplegar primero el nuevo backend. Instrucciones completas: docs/ONEDRIVE-DESPLIEGUE.md. La ejecución de la migración y la prueba real Microsoft quedan a cargo del equipo de backend/titular de la cuenta; no se realizaron desde esta sesión.

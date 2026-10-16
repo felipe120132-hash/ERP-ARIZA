@@ -104,7 +104,8 @@ test("productos: creación confirmada sin stock ni imagen ni datos ajenos", asyn
   await page
     .getByLabel("Nombre del producto", { exact: true })
     .fill("Filtro de acuario");
-  await page.getByLabel("Categoría", { exact: true }).fill("Accesorios");
+  await page.getByLabel("Categoría", { exact: true }).selectOption("Accesorios");
+  await page.getByLabel("Origen", { exact: true }).selectOption("Importado");
   await page.getByLabel("Precio tienda (COP)", { exact: true }).fill("1234.56");
   await page
     .getByRole("button", { name: "Revisar producto", exact: true })

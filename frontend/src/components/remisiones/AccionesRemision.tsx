@@ -13,6 +13,7 @@ import { remisionesService } from "@/services/remisionesService";
 import { cargarDocumentoRemision } from "@/services/documentoRemisionService";
 import type { Remision } from "@/types/schemas";
 import { formatCOP } from "@/lib/cartera";
+import { Link } from "react-router-dom";
 export default function AccionesRemision({
   remision,
   onUpdated,
@@ -67,6 +68,7 @@ export default function AccionesRemision({
   return (
     <>
       <div className="receipt-tools">
+        {perfil?.rol === "ADMIN" && <Button asChild variant="outline"><Link to={`/documentos?remision=${remision.id}`}>Guardar PDF en OneDrive</Link></Button>}
         <Button
           variant="outline"
           disabled={busy || cancel}
