@@ -4,7 +4,7 @@ import { z } from "npm:zod@4.0.0";
 const origins = new Set(["https://erp-ariza.vercel.app", "http://localhost:5173"]);
 const redirects = new Set([...origins].map(origin => `${origin}/onedrive/callback`));
 const maximum = 5 * 1024 * 1024;
-const uuid = z.string().uuid();
+const uuid = z.guid();
 const metadataSchema = z.object({
   id: uuid, nombre: z.string().trim().min(1).max(160),
   tipo_documento: z.enum(["FACTURA_DIAN", "COTIZACION_CHINA", "LEGAL", "OTRO"]),
@@ -12,16 +12,45 @@ const metadataSchema = z.object({
 });
 class PublicError extends Error { constructor(message: string, public status = 400) { super(message); } }
 function env(name: string) { const value = Deno.env.get(name); if (!value) throw new PublicError("La integración aún no está configurada en el servidor.", 503); return value; }
-function requireOk<T>(result: { data: T; error: unknown }): T { if (result.error) throw new PublicError("No se pudo confirmar la operación. Reintenta la misma solicitud.", 503); return result.data; }
+function logInternal(action: string, code: string | number, message: string) {
+  console.error(`[onedrive] acción: ${action}, código: ${code}, mensaje: ${message}`);
+}
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const unb64 = (text: string) => Uint8Array.from(atob(text), x => x.charCodeAt(0));
 async function hash(text: string | Uint8Array) { const bytes = typeof text === "string" ? new TextEncoder().encode(text) : new Uint8Array(text); return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(x => x.toString(16).padStart(2,"0")).join(""); }
 async function key() { const bytes = unb64(env("ONEDRIVE_ENCRYPTION_KEY")); if (bytes.length !== 32) throw new PublicError("La clave de cifrado del servidor no es válida.", 503); return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt","decrypt"]); }
-async function seal(value: unknown) { const iv = crypto.getRandomValues(new Uint8Array(12)); const cipher = await crypto.subtle.encrypt({ name:"AES-GCM",iv }, await key(),new TextEncoder().encode(JSON.stringify(value))); return `${b64(iv)}.${b64(new Uint8Array(cipher))}`; }
-async function unseal(value: string) { const [iv,cipher] = value.split("."); const plain = await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(iv)},await key(),unb64(cipher)); return JSON.parse(new TextDecoder().decode(plain)); }
-async function microsoftToken(params: Record<string,string>) {
+async function seal(value: unknown, action: string) {
+  try {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name:"AES-GCM", iv }, await key(), new TextEncoder().encode(JSON.stringify(value)));
+    return `${b64(iv)}.${b64(new Uint8Array(cipher))}`;
+  } catch (err) {
+    const e = err as Error;
+    logInternal(action, e.name || "CRYPTO_ENCRYPT_ERROR", e.message || "Fallo en cifrado");
+    throw new PublicError("No se pudo confirmar la operación. Reintenta la misma solicitud.", 503);
+  }
+}
+async function unseal(value: string, action: string) {
+  try {
+    const [iv, cipher] = value.split(".");
+    if (!iv || !cipher) throw new Error("Datos cifrados incompletos");
+    const plain = await crypto.subtle.decrypt({ name:"AES-GCM", iv: unb64(iv) }, await key(), unb64(cipher));
+    return JSON.parse(new TextDecoder().decode(plain));
+  } catch (err) {
+    const e = err as Error;
+    logInternal(action, e.name || "CRYPTO_DECRYPT_ERROR", e.message || "Fallo en descifrado");
+    throw new PublicError("No se pudo confirmar la operación. Reintenta la misma solicitud.", 503);
+  }
+}
+async function microsoftToken(params: Record<string,string>, action: string) {
   const response = await fetch("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", { method:"POST", body:new URLSearchParams({client_id:env("CLIENT_ID"),client_secret:env("CLIENT_SECRET"),scope:"Files.ReadWrite offline_access User.Read",...params}),signal:AbortSignal.timeout(20000) });
-  if (!response.ok) throw new PublicError("Microsoft no pudo renovar o completar la autorización. Un administrador debe volver a conectar la cuenta.", 409);
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => null);
+    const code = errBody?.error ?? String(response.status);
+    const msg = errBody?.error_description ?? response.statusText ?? "Error al obtener token de Microsoft";
+    logInternal(action, code, msg);
+    throw new PublicError("Microsoft no pudo renovar o completar la autorización. Un administrador debe volver a conectar la cuenta.", 409);
+  }
   return z.object({access_token:z.string().min(1),refresh_token:z.string().min(1),expires_in:z.number().positive()}).parse(await response.json());
 }
 async function graph(token: string, path: string, options: RequestInit = {}) {
@@ -44,6 +73,15 @@ export async function handleRequest(req: Request) {
   if(req.method !== "POST") return json({error:"Método no permitido."},405);
   let db: SupabaseClient | undefined;
   let lease: string | undefined;
+  let currentAction = "auth";
+  const requireOk = <T>(result: { data: T; error: unknown }): T => {
+    if (result.error) {
+      const err = result.error as { code?: string; message?: string; details?: string };
+      logInternal(currentAction, err?.code ?? "DB_ERROR", err?.message ? `${err.message}${err.details ? ` (${err.details})` : ""}` : "Error de base de datos");
+      throw new PublicError("No se pudo confirmar la operación. Reintenta la misma solicitud.", 503);
+    }
+    return result.data;
+  };
   try {
     db=createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false,autoRefreshToken:false}});
     const bearer=req.headers.get("Authorization")?.match(/^Bearer (.+)$/i)?.[1];
@@ -58,6 +96,7 @@ export async function handleRequest(req: Request) {
     const received=await limitedBody(req.body,isForm?maximum+65536:32768);
     const form=isForm?await new Response(received,{headers:{"Content-Type":req.headers.get("Content-Type")!}}).formData():null;
     const body=form?{action:"upload"}:JSON.parse(new TextDecoder().decode(received));
+    currentAction = typeof body?.action === "string" ? body.action : "unknown";
     const admin=["start","complete","disconnect","upload","recover"].includes(body.action);
     if(admin && profile.rol!=="ADMIN") throw new PublicError("Solo administradores activos pueden realizar esta operación.",403);
     const connection=()=>db!.from("onedrive_empresa").select("*").eq("id",true).single();
@@ -85,7 +124,7 @@ export async function handleRequest(req: Request) {
       const state=crypto.randomUUID()+crypto.randomUUID(), verifier=b64(crypto.getRandomValues(new Uint8Array(32))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
       const challenge=b64(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
       requireOk(await db.from("onedrive_oauth").delete().eq("usuario_id",user.id));
-      requireOk(await db.from("onedrive_oauth").insert({state_hash:await hash(state),usuario_id:user.id,redirect_uri:body.redirect_uri,verifier_cifrado:await seal(verifier),expires_at:new Date(Date.now()+600000).toISOString()}));
+      requireOk(await db.from("onedrive_oauth").insert({state_hash:await hash(state),usuario_id:user.id,redirect_uri:body.redirect_uri,verifier_cifrado:await seal(verifier,currentAction),expires_at:new Date(Date.now()+600000).toISOString()}));
       const params=new URLSearchParams({client_id:env("CLIENT_ID"),redirect_uri:body.redirect_uri,response_type:"code",response_mode:"query",scope:"Files.ReadWrite offline_access User.Read",state,code_challenge:challenge,code_challenge_method:"S256",prompt:"select_account"});
       return json({state,authorization_url:`https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?${params}`});
     }
@@ -105,27 +144,38 @@ export async function handleRequest(req: Request) {
       const state=z.string().min(32).max(200).parse(body.state),code=z.string().min(1).max(10000).parse(body.code);
       const oauth=requireOk(await db.from("onedrive_oauth").delete().eq("state_hash",await hash(state)).eq("usuario_id",user.id).eq("redirect_uri",body.redirect_uri).gt("expires_at",new Date().toISOString()).select("*").maybeSingle());
       if(!oauth)throw new PublicError("La autorización venció o ya se utilizó. Inicia una conexión nueva.");
-      const tokens=await microsoftToken({grant_type:"authorization_code",code,redirect_uri:oauth.redirect_uri,code_verifier:await unseal(oauth.verifier_cifrado)});
+      const tokens=await microsoftToken({grant_type:"authorization_code",code,redirect_uri:oauth.redirect_uri,code_verifier:await unseal(oauth.verifier_cifrado,currentAction)},currentAction);
       const driveResponse=await graph(tokens.access_token,"/me/drive");
-      if(!driveResponse.ok)throw new PublicError("No se pudo verificar el OneDrive de la cuenta.",409);
+      if(!driveResponse.ok) {
+        const errBody = await driveResponse.json().catch(() => null);
+        logInternal(currentAction, errBody?.error?.code ?? String(driveResponse.status), errBody?.error?.message ?? driveResponse.statusText ?? "Error verificando OneDrive");
+        throw new PublicError("No se pudo verificar el OneDrive de la cuenta.",409);
+      }
       const drive=await driveResponse.json();
-      if(typeof drive.id!=="string")throw new PublicError("OneDrive devolvió una cuenta inválida.",502);
+      if(typeof drive.id!=="string") {
+        logInternal(currentAction, "INVALID_DRIVE", "OneDrive devolvió una cuenta sin drive.id");
+        throw new PublicError("OneDrive devolvió una cuenta inválida.",502);
+      }
       if(c.drive_id && c.drive_id!==drive.id)throw new PublicError("Esta empresa ya tiene otra cuenta de OneDrive asociada. Reconecta la misma cuenta para conservar acceso a sus documentos.",409);
-      requireOk(await db.from("onedrive_empresa").update({tokens_cifrados:await seal(tokens),expires_at:new Date(Date.now()+tokens.expires_in*1000).toISOString(),drive_id:drive.id,cuenta:drive.owner?.user?.displayName??"Cuenta empresarial",conectado_por:user.id}).eq("id",true).eq("lock_owner",lease).select("id").single());
+      requireOk(await db.from("onedrive_empresa").update({tokens_cifrados:await seal(tokens,currentAction),expires_at:new Date(Date.now()+tokens.expires_in*1000).toISOString(),drive_id:drive.id,cuenta:drive.owner?.user?.displayName??"Cuenta empresarial",conectado_por:user.id}).eq("id",true).eq("lock_owner",lease).select("id").single());
       return json({connected:true});
     }
     if(!c.tokens_cifrados)throw new PublicError("Un administrador debe conectar el OneDrive de la empresa.",409);
-    let tokens=await unseal(c.tokens_cifrados);
+    let tokens=await unseal(c.tokens_cifrados,currentAction);
     if(Date.parse(c.expires_at)<Date.now()+60000){
-      tokens=await microsoftToken({grant_type:"refresh_token",refresh_token:tokens.refresh_token});
-      requireOk(await db.from("onedrive_empresa").update({tokens_cifrados:await seal(tokens),expires_at:new Date(Date.now()+tokens.expires_in*1000).toISOString()}).eq("id",true).eq("lock_owner",lease).select("id").single());
+      tokens=await microsoftToken({grant_type:"refresh_token",refresh_token:tokens.refresh_token},currentAction);
+      requireOk(await db.from("onedrive_empresa").update({tokens_cifrados:await seal(tokens,currentAction),expires_at:new Date(Date.now()+tokens.expires_in*1000).toISOString()}).eq("id",true).eq("lock_owner",lease).select("id").single());
     }
     if(body.action==="file") {
       const id=uuid.parse(body.id);
       const a=requireOk(await db.from("onedrive_archivos").select("*").eq("id",id).eq("finalizado",true).single());
       if(a.drive_id!==c.drive_id)throw new PublicError("El documento pertenece a otra conexión.",409);
       const response=await graph(tokens.access_token,`/drives/${encodeURIComponent(a.drive_id)}/items/${encodeURIComponent(a.item_id)}/content`);
-      if(!response.ok)throw new PublicError("El archivo no está disponible en OneDrive.",404);
+      if(!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        logInternal(currentAction, errBody?.error?.code ?? String(response.status), errBody?.error?.message ?? response.statusText ?? "El archivo no está disponible en OneDrive");
+        throw new PublicError("El archivo no está disponible en OneDrive.",404);
+      }
       const bytes=await limitedBody(response.body,maximum);
       return new Response(bytes,{headers:{...headers,"Content-Type":a.mime_type,"Content-Disposition":`attachment; filename="documento-${id}.${a.mime_type==="application/pdf"?"pdf":a.mime_type==="image/png"?"png":"jpg"}"`,"X-Content-Type-Options":"nosniff"}});
     }
@@ -146,11 +196,26 @@ export async function handleRequest(req: Request) {
     if(a && a.drive_id!==c.drive_id)throw new PublicError("La cuenta de OneDrive cambió.",409);
     if(!a)requireOk(await db.from("onedrive_archivos").insert({id:m.id,usuario_id:user.id,fingerprint,metadata:m,drive_id:c.drive_id,mime_type:mime,bytes:file.size}));
     const folder=await graph(tokens.access_token,"/me/drive/root:/ArizaERP");
-    if(folder.status===404){const created=await graph(tokens.access_token,"/me/drive/root/children",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"ArizaERP",folder:{},"@microsoft.graph.conflictBehavior":"fail"})});if(!created.ok && created.status!==409)throw new PublicError("No se pudo preparar la carpeta de documentos.",502);}else if(!folder.ok)throw new PublicError("No se pudo consultar la carpeta de documentos.",502);
+    if(folder.status===404){
+      const created=await graph(tokens.access_token,"/me/drive/root/children",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"ArizaERP",folder:{},"@microsoft.graph.conflictBehavior":"fail"})});
+      if(!created.ok && created.status!==409) {
+        const errBody = await created.json().catch(() => null);
+        logInternal(currentAction, errBody?.error?.code ?? String(created.status), errBody?.error?.message ?? created.statusText ?? "No se pudo preparar la carpeta de documentos");
+        throw new PublicError("No se pudo preparar la carpeta de documentos.",502);
+      }
+    } else if(!folder.ok) {
+      const errBody = await folder.json().catch(() => null);
+      logInternal(currentAction, errBody?.error?.code ?? String(folder.status), errBody?.error?.message ?? folder.statusText ?? "No se pudo consultar la carpeta de documentos");
+      throw new PublicError("No se pudo consultar la carpeta de documentos.",502);
+    }
     const ext=mime==="application/pdf"?"pdf":mime==="image/png"?"png":"jpg";
     // Deterministic UUID path: retries replace the same bytes, never create another file.
     const uploaded=await graph(tokens.access_token,`/me/drive/root:/ArizaERP/${m.id}.${ext}:/content`,{method:"PUT",headers:{"Content-Type":mime},body:bytes});
-    if(!uploaded.ok)throw new PublicError("No se confirmó la subida. Reintenta con el mismo archivo.",502);
+    if(!uploaded.ok) {
+      const errBody = await uploaded.json().catch(() => null);
+      logInternal(currentAction, errBody?.error?.code ?? String(uploaded.status), errBody?.error?.message ?? uploaded.statusText ?? "No se confirmó la subida a OneDrive");
+      throw new PublicError("No se confirmó la subida. Reintenta con el mismo archivo.",502);
+    }
     const item=z.object({id:z.string().min(1),webUrl:z.string().url()}).parse(await uploaded.json());
     if(!item.webUrl.startsWith("https://"))throw new PublicError("El enlace del archivo no es válido.",502);
     // Never persist @microsoft.graph.downloadUrl: it expires.
@@ -159,6 +224,8 @@ export async function handleRequest(req: Request) {
   } catch(error) {
     if(error instanceof PublicError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError || error instanceof SyntaxError)return json({error:"Los datos recibidos no son válidos."},400);
+    const err = error as Error;
+    logInternal(currentAction, err?.name || "INTERNAL_ERROR", err?.message || String(error));
     return json({error:"No se pudo confirmar la operación. Conserva la solicitud y vuelve a intentar."},503);
   } finally {
     if(db&&lease)await db.from("onedrive_empresa").update({lock_owner:null,lock_until:new Date(0).toISOString()}).eq("id",true).eq("lock_owner",lease);

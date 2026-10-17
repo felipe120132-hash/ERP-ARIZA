@@ -13,8 +13,8 @@ export async function validarDocumento(file:File){
 const completed=z.object({document:documentoSchema});
 export const documentosEmpresaService={
   async listar(filters:{page:number;q:string;tipo:string;cliente_id?:string;remision_id?:string}){return z.object({documents:z.array(documentoSchema),total:z.number().int().nonnegative()}).parse(await onedriveRequest({action:"list",...filters}));},
-  async clientes(q:string){return z.object({items:z.array(z.object({id:z.string().uuid(),nombre_tienda:z.string()}))}).parse(await onedriveRequest({action:"references",kind:"clientes",q})).items;},
-  async remisiones(q:string,cliente_id:string|null,id?:string){return z.object({items:z.array(z.object({id:z.string().uuid(),consecutivo:z.union([z.number(),z.string()]),cliente_id:z.string().uuid()}))}).parse(await onedriveRequest({action:"references",kind:"remisiones",q,cliente_id,id})).items;},
+  async clientes(q:string){return z.object({items:z.array(z.object({id:z.guid(),nombre_tienda:z.string()}))}).parse(await onedriveRequest({action:"references",kind:"clientes",q})).items;},
+  async remisiones(q:string,cliente_id:string|null,id?:string){return z.object({items:z.array(z.object({id:z.guid(),consecutivo:z.union([z.number(),z.string()]),cliente_id:z.guid()}))}).parse(await onedriveRequest({action:"references",kind:"remisiones",q,cliente_id,id})).items;},
   async subir(s:SolicitudDocumento){await validarDocumento(s.file);const form=new FormData();form.set("metadata",JSON.stringify(s.metadata));form.set("file",s.file);return completed.parse(await onedriveRequest(form)).document;},
   async recuperar(id:string){return z.object({document:documentoSchema.nullable()}).parse(await onedriveRequest({action:"recover",id})).document;},
   async descargar(id:string,nombre:string){const blob=await onedriveRequest({action:"file",id},true) as Blob;const url=URL.createObjectURL(blob);const a=document.createElement("a");const ext=blob.type==="application/pdf"?"pdf":blob.type==="image/png"?"png":"jpg";a.href=url;a.download=`${nombre.replace(/[^\p{L}\p{N} ._-]/gu,"_")}.${ext}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);},
