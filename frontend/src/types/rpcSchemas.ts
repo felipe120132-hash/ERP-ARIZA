@@ -1,13 +1,5 @@
 import { z } from "zod";
-
-// Regex permisivo 8-4-4-4-12 (acepta cualquier UUID válido para Postgres,
-// incluidos los que no tienen dígito de versión estándar, ej. 10000000-0000-…)
-const uuidSchema = z
-  .string()
-  .regex(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    "UUID inválido",
-  );
+import { uuidSchema } from "./schemas";
 
 // ---------------------------------------------------------------------------
 // Item individual para la creación de remisiones
@@ -49,6 +41,31 @@ export const RegistrarAbonoInputSchema = z.object({
   p_remision_id: uuidSchema.nullable().optional(),
 });
 export type RegistrarAbonoInput = z.infer<typeof RegistrarAbonoInputSchema>;
+
+// ---------------------------------------------------------------------------
+// 2b. editar_abono_cartera
+// ---------------------------------------------------------------------------
+export const EditarAbonoInputSchema = z.object({
+  p_abono_id: uuidSchema,
+  p_cliente_id: uuidSchema,
+  p_monto: z
+    .number()
+    .positive({ message: "El monto del abono debe ser mayor a 0." })
+    .refine(
+      (v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.0001,
+      "Usa como máximo dos decimales.",
+    ),
+  p_metodo_pago: z.enum(["EFECTIVO", "TRANSFERENCIA", "BANCOLOMBIA"]),
+  p_remision_id: uuidSchema.nullable().optional(),
+  p_motivo: z
+    .string()
+    .trim()
+    .min(5, { message: "Describe el motivo de la corrección (mínimo 5 caracteres)." })
+    .max(500),
+  p_monto_anterior: z.number().positive(),
+  p_saldo_esperado: z.number().nonnegative(),
+});
+export type EditarAbonoInput = z.infer<typeof EditarAbonoInputSchema>;
 
 // ---------------------------------------------------------------------------
 // 3. anular_remision

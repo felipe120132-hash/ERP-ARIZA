@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { supabase } from "./supabaseClient";
-import { productoSchema, type Producto } from "@/types/schemas";
+import { productoSchema, uuidSchema, type Producto } from "@/types/schemas";
 
 const decimal = z
   .number()
@@ -88,7 +88,7 @@ export const productosAdminService = {
     previous: Producto | null,
     onSend: () => void,
   ) {
-    z.string().uuid().parse(id);
+    uuidSchema.parse(id);
     const values = datosProducto.parse(input);
     await verificarAdminProductos();
     onSend();
@@ -110,6 +110,103 @@ export const productosAdminService = {
         true,
       );
     return parsed.data;
+  },
+  async cambiarEstadoActivo(producto: Producto, activo: boolean) {
+    return this.guardar(
+      producto.id,
+      {
+        sku: producto.sku,
+        nombre: producto.nombre,
+        categoria: producto.categoria,
+        origen: producto.origen,
+        precio_tienda: producto.precio_tienda,
+        precio_distribuidor: producto.precio_distribuidor,
+        tasa_iva: producto.tasa_iva,
+        stock_minimo: producto.stock_minimo,
+        activo,
+      },
+      producto,
+      () => {},
+    );
+  },
+  async eliminarODesactivar(producto: Producto): Promise<{
+    accion: "ELIMINADO" | "DESACTIVADO";
+    producto: Producto | null;
+    mensaje: string;
+  }> {
+    uuidSchema.parse(producto.id);
+    await verificarAdminProductos();
+    const [kardexRes, remisionRes] = await Promise.all([
+      supabase
+        .from("kardex")
+        .select("id", { count: "exact" })
+        .eq("producto_id", producto.id)
+        .limit(1),
+      supabase
+        .from("detalles_remision")
+        .select("id", { count: "exact" })
+        .eq("producto_id", producto.id)
+        .limit(1),
+    ]);
+    if (kardexRes.error || remisionRes.error) {
+      throw new GuardadoProductoError(
+        "No pudimos verificar las dependencias del producto antes de eliminarlo.",
+      );
+    }
+    const tieneKardex = (kardexRes.count ?? kardexRes.data?.length ?? 0) > 0;
+    const tieneRemisiones = (remisionRes.count ?? remisionRes.data?.length ?? 0) > 0;
+    const tieneExistencias = producto.stock_actual > 0;
+
+    if (tieneKardex || tieneRemisiones || tieneExistencias) {
+      if (!producto.activo) {
+        throw new GuardadoProductoError(
+          "Este producto ya está inactivo y no puede eliminarse físicamente porque posee historial de movimientos, remisiones o existencias.",
+        );
+      }
+      const actualizado = await this.cambiarEstadoActivo(producto, false);
+      return {
+        accion: "DESACTIVADO",
+        producto: actualizado,
+        mensaje:
+          "El producto tiene historial en Kardex, remisiones o existencias activas. Se desactivó lógicamente para conservar la trazabilidad.",
+      };
+    }
+
+    await supabase.from("precios_cliente").delete().eq("producto_id", producto.id);
+    const { data, error, status } = await supabase
+      .from("productos")
+      .delete()
+      .eq("id", producto.id)
+      .eq("stock_actual", 0)
+      .select("id");
+
+    if (error) {
+      if (error.code === "23503") {
+        if (!producto.activo) {
+          throw new GuardadoProductoError(
+            "Este producto tiene registros asociados y ya se encuentra inactivo.",
+          );
+        }
+        const actualizado = await this.cambiarEstadoActivo(producto, false);
+        return {
+          accion: "DESACTIVADO",
+          producto: actualizado,
+          mensaje:
+            "El producto tiene dependencias asociadas. Se desactivó lógicamente para conservar el historial.",
+        };
+      }
+      fallo(error, status);
+    }
+    if (!data?.length) {
+      throw new GuardadoProductoError(
+        "El producto cambió o ya no está disponible para eliminar. Actualiza el listado.",
+      );
+    }
+    return {
+      accion: "ELIMINADO",
+      producto: null,
+      mensaje: "Producto eliminado permanentemente.",
+    };
   },
   async imagen(
     producto: Producto,

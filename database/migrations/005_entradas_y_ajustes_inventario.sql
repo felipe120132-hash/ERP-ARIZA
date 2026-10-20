@@ -1,5 +1,5 @@
 -- ==========================================================================
--- Migración 005: Entradas y Ajustes de Inventario (Kardex e Idempotencia)
+-- Migración 005: Entradas, Salidas y Ajustes de Inventario (Kardex e Idempotencia)
 -- ==========================================================================
 -- 1. Modificación de la tabla kardex:
 --    - Agrega registrado_por (UUID REFERENCES perfiles(id), nullable)
@@ -18,7 +18,7 @@
 --    Ambas reemplazan el guard manual por IF NOT es_admin_activo() THEN RAISE EXCEPTION.
 --
 -- 4. Función RPC registrar_movimiento_inventario():
---    - Permite a administradores activos registrar ENTRADA y AJUSTE de inventario
+--    - Permite a administradores activos registrar ENTRADA, SALIDA y AJUSTE de inventario
 --      con control de idempotencia y validación de stock concurrente.
 -- ==========================================================================
 
@@ -211,8 +211,8 @@ BEGIN
   END IF;
 
   -- 2. Validaciones de entrada
-  IF p_tipo IS NULL OR p_tipo NOT IN ('ENTRADA', 'AJUSTE') THEN
-    RAISE EXCEPTION 'Tipo de movimiento inválido. Debe ser ENTRADA o AJUSTE.';
+  IF p_tipo IS NULL OR p_tipo NOT IN ('ENTRADA', 'SALIDA', 'AJUSTE') THEN
+    RAISE EXCEPTION 'Tipo de movimiento inválido. Debe ser ENTRADA, SALIDA o AJUSTE.';
   END IF;
 
   IF p_idempotency_key IS NULL THEN
@@ -226,6 +226,13 @@ BEGIN
   IF p_tipo = 'ENTRADA' THEN
     IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
       RAISE EXCEPTION 'La cantidad para una ENTRADA debe ser mayor a cero.';
+    END IF;
+  ELSIF p_tipo = 'SALIDA' THEN
+    IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
+      RAISE EXCEPTION 'La cantidad para una SALIDA debe ser mayor a cero.';
+    END IF;
+    IF p_stock_esperado IS NULL THEN
+      RAISE EXCEPTION 'El stock esperado es obligatorio para una SALIDA.';
     END IF;
   ELSIF p_tipo = 'AJUSTE' THEN
     IF p_cantidad IS NULL OR p_cantidad < 0 THEN
@@ -260,7 +267,10 @@ BEGIN
         'producto_id',     v_kardex_existente.producto_id,
         'tipo_movimiento', v_kardex_existente.tipo_movimiento,
         'cantidad',        v_kardex_existente.cantidad,
-        'stock_anterior',  v_kardex_existente.stock_resultante - v_kardex_existente.cantidad,
+        'stock_anterior',  CASE
+                             WHEN v_kardex_existente.tipo_movimiento = 'SALIDA' THEN v_kardex_existente.stock_resultante + abs(v_kardex_existente.cantidad)
+                             ELSE v_kardex_existente.stock_resultante - v_kardex_existente.cantidad
+                           END,
         'stock_resultante', v_kardex_existente.stock_resultante,
         'repetido',        true
       );
@@ -279,6 +289,20 @@ BEGIN
 
     v_cantidad_kardex := p_cantidad;
     v_stock_nuevo     := v_stock_actual + p_cantidad;
+
+  ELSIF p_tipo = 'SALIDA' THEN
+    IF NOT v_activo THEN
+      RAISE EXCEPTION 'No se puede registrar una salida para un producto inactivo.';
+    END IF;
+    IF p_stock_esperado <> v_stock_actual THEN
+      RAISE EXCEPTION 'El stock cambió desde que lo consultaste (ahora: %). Recuenta y vuelve a enviar.', v_stock_actual;
+    END IF;
+    IF p_cantidad > v_stock_actual THEN
+      RAISE EXCEPTION 'Stock insuficiente para la salida solicitada (disponible: %).', v_stock_actual;
+    END IF;
+
+    v_cantidad_kardex := p_cantidad;
+    v_stock_nuevo     := v_stock_actual - p_cantidad;
 
   ELSIF p_tipo = 'AJUSTE' THEN
     IF p_stock_esperado <> v_stock_actual THEN
@@ -343,4 +367,4 @@ REVOKE EXECUTE ON FUNCTION registrar_movimiento_inventario(UUID, TEXT, NUMERIC, 
 GRANT EXECUTE ON FUNCTION registrar_movimiento_inventario(UUID, TEXT, NUMERIC, TEXT, UUID, NUMERIC) TO authenticated;
 
 COMMENT ON FUNCTION registrar_movimiento_inventario(UUID, TEXT, NUMERIC, TEXT, UUID, NUMERIC) IS
-  'Registra entradas y ajustes de inventario de forma atómica e idempotente. Exclusivo para administradores activos.';
+  'Registra entradas, salidas y ajustes de inventario de forma atómica e idempotente. Exclusivo para administradores activos.';

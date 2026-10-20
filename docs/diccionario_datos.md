@@ -2,7 +2,7 @@
 
 **Base de datos:** PostgreSQL sobre Supabase
 **Cliente:** Distribuciones Ariza
-**Última actualización de esquema:** módulos de catálogo, cartera, precios por cliente, IVA variable, kardex, gastos y documentos
+**Última actualización de esquema:** módulos de catálogo, cartera (edición controlada de abonos), precios por cliente, IVA variable, kardex (entradas y ajustes idempotentes), finanzas/gastos y centro documental empresarial OneDrive
 
 ---
 
@@ -13,7 +13,7 @@
 - **Llaves primarias:** todas las tablas usan `UUID` generado con `gen_random_uuid()` (excepto `perfiles`, cuyo `id` referencia directamente a `auth.users`).
 - **Dinero / valores financieros:** siempre `NUMERIC(12,2)`. Nunca `FLOAT` ni `REAL`, para evitar errores de redondeo en el cálculo del IVA (19% o 5% según el producto).
 - **Fechas:** siempre `TIMESTAMPTZ` en UTC (ISO 8601), salvo los campos de referencia mensual (`mes_referencia`) que son `DATE` porque representan un período, no un instante.
-- **Archivos / PDFs:** la base de datos **nunca** almacena binarios. Los documentos (remisiones en PDF, facturas DIAN, cotizaciones) se suben a Microsoft OneDrive vía Microsoft Graph API, y en PostgreSQL solo se guarda el enlace en una columna `TEXT` (`pdf_url`, `onedrive_url`).
+- **Archivos / PDFs:** la base de datos **nunca** almacena binarios. Los documentos (remisiones en PDF, facturas DIAN, cotizaciones) se suben a Microsoft OneDrive vía Microsoft Graph API (a través de la Edge Function empresarial `/functions/v1/onedrive`), y en PostgreSQL solo se guarda el enlace en una columna `TEXT` (`pdf_url`, `onedrive_url`) y su correspondencia verificada en `onedrive_archivos`.
 - **Imágenes de producto:** se almacenan en **Supabase Storage**, no en OneDrive ni en la base de datos. El bucket `productos-imagenes` es privado; en `productos.imagen_path` solo se guarda la ruta del objeto (ej. `sku/ABC123.jpg`), y el frontend obtiene la imagen llamando a `supabase.storage.from('productos-imagenes').createSignedUrl(path, expiresIn)` — nunca una URL pública fija, porque el bucket no es público.
 - **Listas de estados (`CHECK`):** siempre en mayúsculas sostenidas, ej. `'PENDIENTE'`, `'PAGADA'`, `'ANULADA'`, `'CONTADO'`, `'CREDITO'`, `'TIENDA'`, `'DISTRIBUIDOR'`, `'ADMIN'`, `'VENDEDOR'`.
 - **Seguridad (RLS):** toda tabla tiene `ROW LEVEL SECURITY` activado y forzado (`FORCE ROW LEVEL SECURITY`). El rol `anon` no tiene ningún privilegio (`REVOKE ALL ... FROM anon`); todo el acceso pasa por `authenticated`, filtrado según el rol de negocio (`ADMIN` / `VENDEDOR`) almacenado en `perfiles`. Todas las funciones RPC y triggers operan con `search_path` fijo inmutable (`SET search_path = public, pg_temp`), y los permisos `EXECUTE` están revocados de `PUBLIC` y limitados exclusivamente a `authenticated` (nunca `anon`).
@@ -54,7 +54,7 @@ Catálogo (97 SKUs). Contiene los dos precios base y la tasa de IVA propia de ca
 | `imagen_path` | `TEXT` | Sí | — | Ruta del objeto dentro del bucket privado `productos-imagenes` de Supabase Storage (ej. `sku/ABC123.jpg`). No es una URL pública: se resuelve en el frontend con `createSignedUrl()`. Nulo si el producto aún no tiene foto cargada. |
 | `stock_actual` | `NUMERIC(12,2)` | No | Check `>= 0`, Default `0` | Existencias actuales. Se actualiza únicamente vía triggers de `detalles_remision` y `kardex`. |
 | `stock_minimo` | `NUMERIC(12,2)` | No | Check `>= 0`, Default `10` | Umbral configurable para el semáforo de stock (2.3). |
-| `activo` | `BOOLEAN` | No | Default `TRUE` | Productos descontinuados se marcan `FALSE` en vez de borrarse. |
+| `activo` | `BOOLEAN` | No | Default `TRUE` | Productos con movimientos históricos o remisiones se desactivan (`FALSE`) en vez de borrarse físicamente. |
 | `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Fecha de alta del producto. |
 | `updated_at` | `TIMESTAMPTZ` | No | Default `now()` | Se actualiza en cada movimiento de stock. |
 
@@ -74,9 +74,9 @@ Las 200 tiendas/distribuidores. Define el tipo de precio base que aplica por def
 | `telefono` | `TEXT` | Sí | — | Teléfono / WhatsApp para envío de remisiones. |
 | `direccion` | `TEXT` | Sí | — | Dirección de entrega. |
 | `tipo_cliente` | `TEXT` | No | Check: `'TIENDA'`, `'DISTRIBUIDOR'`; Default `'TIENDA'` | Define si el precio base es `precio_tienda` o `precio_distribuidor` cuando no hay precio especial en `precios_cliente`. |
-| `saldo_cartera` | `NUMERIC(12,2)` | No | Check `>= 0`, Default `0` | Saldo adeudado acumulado. Se actualiza automáticamente por trigger al crear remisiones a crédito y al registrar abonos. |
+| `saldo_cartera` | `NUMERIC(12,2)` | No | Check `>= 0`, Default `0` | Saldo adeudado acumulado. Se actualiza automáticamente por trigger al crear remisiones a crédito y al registrar o editar abonos. |
 | `en_mora` | `BOOLEAN` | No | Default `FALSE` | Se marca manualmente desde el módulo de cartera (no existe cupo de crédito automático). |
-| `activo` | `BOOLEAN` | No | Default `TRUE` | Tiendas inactivas no se borran, se desactivan. |
+| `activo` | `BOOLEAN` | No | Default `TRUE` | Tiendas con historial o saldo se desactivan en vez de borrarse físicamente. |
 | `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Fecha de alta del cliente. |
 | `updated_at` | `TIMESTAMPTZ` | No | Default `now()` | Se actualiza con cada movimiento de cartera. |
 
@@ -148,7 +148,7 @@ Histórico inmutable de movimientos de inventario. Escrito automáticamente por 
 | `producto_id` | `UUID` | No | FK → `productos(id)` | Producto afectado. |
 | `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Remisión que originó el movimiento (nulo en entradas y ajustes manuales). |
 | `tipo_movimiento` | `TEXT` | No | Check: `'ENTRADA'`, `'SALIDA'`, `'AJUSTE'` | Naturaleza del movimiento. |
-| `cantidad` | `NUMERIC(12,2)` | No | — | Cantidad movida. En `ENTRADA` y `SALIDA` es positiva; en `AJUSTE` guarda la **diferencia con signo** (`conteo_físico - stock_anterior`), positiva si hay sobrante y negativa si hay faltante. |
+| `cantidad` | `NUMERIC(12,2)` | No | — | Cantidad movida. En `ENTRADA` y `SALIDA` es positiva; en `AJUSTE` guarda la **diferencia con signo** (`conteo_físico - stock_anterior`), positiva si hay sobrante, negativa si hay faltante, o `0` si el conteo confirma el saldo actual. |
 | `stock_resultante` | `NUMERIC(12,2)` | No | — | Foto del stock después de aplicar el movimiento. Útil para auditoría sin recalcular históricos. |
 | `observacion` | `TEXT` | Sí | — | Justificación o motivo del movimiento (ej. `"Descuento por remisión"`, `"Reingreso por anulación"`, `"Compra factura #123"`). Mínimo 5 caracteres en movimientos manuales. |
 | `registrado_por` | `UUID` | Sí | FK → `perfiles(id)` | Usuario administrador que registró el movimiento manual. Nulo en movimientos originados por triggers del sistema. |
@@ -166,7 +166,7 @@ Pagos parciales o totales aplicados al saldo de un cliente.
 | `id` | `UUID` | No | PK | Identificador del abono. |
 | `cliente_id` | `UUID` | No | FK → `clientes(id)` | Cliente que realiza el pago. |
 | `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Remisión puntual que cubre el abono (opcional; puede ser un abono general a la cartera). |
-| `monto` | `NUMERIC(12,2)` | No | Check `> 0` | Valor abonado. Descuenta automáticamente `clientes.saldo_cartera` vía trigger. |
+| `monto` | `NUMERIC(12,2)` | No | Check `> 0` | Valor abonado. Descuenta automáticamente `clientes.saldo_cartera` vía trigger al crearse, o se ajusta vía RPC `editar_abono_cartera`. |
 | `metodo_pago` | `TEXT` | No | Check: `'EFECTIVO'`, `'TRANSFERENCIA'`, `'BANCOLOMBIA'`; Default `'EFECTIVO'` | Forma de pago del abono. |
 | `fecha` | `TIMESTAMPTZ` | No | Default `now()` | Fecha del pago. |
 | `registrado_por` | `UUID` | No | FK → `perfiles(id)` | Usuario que registró el abono. |
@@ -176,7 +176,7 @@ Pagos parciales o totales aplicados al saldo de un cliente.
 
 ### 2.9 `gastos`
 
-Gastos operacionales fijos y variables. Información financiera sensible — solo accesible por `ADMIN`.
+Gastos operacionales fijos y variables. Información financiera sensible — solo accesible por `ADMIN`. Soporta creación, edición con control de concurrencia y eliminación con recálculo inmediato del resumen mensual.
 
 | Campo / Propiedad API | Tipo de Dato | Nulo (Sí/No) | Clave (PK/FK/Check) | Descripción / Regla de Negocio |
 |---|---|---|---|---|
@@ -211,11 +211,11 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 | Campo / Propiedad API | Tipo de Dato | Nulo (Sí/No) | Clave (PK/FK/Check) | Descripción / Regla de Negocio |
 |---|---|---|---|---|
 | `id` | `UUID` | No | PK | Identificador del documento. |
-| `tipo_documento` | `TEXT` | No | Check: `'FACTURA_DIAN'`, `'COTIZACION_CHINA'`, `'LEGAL'`, `'OTRO'` | Clasificación del archivo. |
+| `tipo_documento` | `TEXT` | No | Check: `'FACTURA_DIAN'`, `'COTIZACION_CHINA'`, `'LEGAL'`, `'OTRO'` | Clasificación del archivo. Los documentos `'FACTURA_DIAN'` o asociados a una remisión están protegidos contra eliminación accidental. |
 | `nombre` | `TEXT` | No | — | Nombre descriptivo del documento. |
 | `onedrive_url` | `TEXT` | No | — | Enlace directo al archivo en OneDrive corporativo. |
 | `cliente_id` | `UUID` | Sí | FK → `clientes(id)` | Asociación opcional a una tienda (ej. contrato o archivo legal general del cliente). |
-| `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Asociación opcional a un pedido puntual (ej. la factura DIAN de esa remisión específica). |
+| `remision_id` | `UUID` | Sí | FK → `remisiones(id)` | Asociación opcional a un pedido puntual (ej. la factura DIAN o el PDF de esa remisión específica). |
 | `subido_por` | `UUID` | No | FK → `perfiles(id)` | Usuario `ADMIN` que subió el documento. |
 | `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Fecha de carga. |
 
@@ -227,13 +227,25 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 |---|---|---|---|
 | `crear_remision` | `p_cliente_id UUID, p_tipo_pago TEXT, p_items JSONB, p_aplica_iva BOOLEAN = TRUE` | `UUID` (id de la remisión) | Resuelve precio (especial > distribuidor/tienda), calcula IVA por línea según la tasa de cada producto, respeta el toggle de IVA, e inserta encabezado + detalles en una transacción atómica. |
 | `registrar_abono` | `p_cliente_id UUID, p_monto NUMERIC, p_metodo_pago TEXT = 'EFECTIVO', p_remision_id UUID = NULL` | `UUID` (id del abono) | Registra un pago a la cartera de un cliente; descuenta `saldo_cartera` vía trigger. |
+| `editar_abono_cartera` | `p_abono_id UUID, p_cliente_id UUID, p_monto NUMERIC, p_metodo_pago TEXT, p_remision_id UUID = NULL, p_motivo TEXT = NULL, p_monto_anterior NUMERIC = NULL` | `JSONB` (`abono_id, cliente_id, monto_anterior, monto_nuevo, saldo_anterior, saldo_resultante, motivo`) | Corrige de forma atómica y con bloqueo pesimista (`FOR UPDATE`) un abono registrado, recalculando `clientes.saldo_cartera` y validando el saldo pendiente de la remisión a crédito sin permitir saldos negativos ni sobrepagos (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
+| `registrar_movimiento_inventario` | `p_producto_id UUID, p_tipo TEXT, p_cantidad NUMERIC, p_motivo TEXT, p_idempotency_key UUID, p_stock_esperado NUMERIC = NULL` | `JSONB` (`kardex_id, producto_id, tipo_movimiento, cantidad, stock_anterior, stock_resultante, repetido`) | Registra entradas (`ENTRADA`) o conteos físicos (`AJUSTE`, permitiendo `0` existencias e incluyendo ajustes cuando el conteo coincide con el stock actual) de forma atómica e idempotente (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
 | `resumen_financiero_mensual` | `p_mes DATE` | Tabla: `total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto` | Calcula la utilidad neta del mes y si los gastos superaron el presupuesto configurado (exclusivo rol `ADMIN`). |
-| `anular_remision` | `p_remision_id UUID` | `VOID` | Marca la remisión como ANULADA. Triggers reingresan stock y revierten cartera automáticamente (`SECURITY DEFINER`). |
-| `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a VENDEDOR). |
+| `anular_remision` | `p_remision_id UUID` | `VOID` | Marca la remisión como ANULADA. Triggers reingresan stock y revierten cartera automáticamente (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
+| `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a VENDEDOR y ADMIN). |
 
 ---
 
-## 4. Almacenamiento (Supabase Storage)
+## 4. Tablas internas de integración OneDrive (Migración 006 — Service-only)
+
+Las siguientes tablas almacenan el estado de conexión empresarial con Microsoft OneDrive, el flujo OAuth/PKCE y la correspondencia de archivos en Graph. Tienen `RLS` forzado y **0 permisos** para `anon` y `authenticated`; solo son accesibles desde la Edge Function `/functions/v1/onedrive` con `service_role`:
+
+- **`onedrive_empresa`**: Fila única (`id = TRUE`) con `estado`, `cuenta_correo`, `drive_id`, tokens cifrados (`access_token_cifrado`, `refresh_token_cifrado`) y bloqueo de concurrencia con caducidad (`operacion_id`, `operacion_expira_en`).
+- **`onedrive_oauth`**: Estados efímeros OAuth2 + PKCE (`state`, `usuario_id`, `code_verifier_cifrado`, `expira_en`).
+- **`onedrive_archivos`**: Reserva e inventario de archivos en Microsoft Graph (`id`, `documento_id`, `remision_id`, `drive_id`, `item_id`, `ruta_onedrive`, `web_url`, `sha256`, `estado`).
+
+---
+
+## 5. Almacenamiento (Supabase Storage)
 
 | Bucket | Público | Contenido | Regla de acceso (RLS sobre `storage.objects`) |
 |---|---|---|---|

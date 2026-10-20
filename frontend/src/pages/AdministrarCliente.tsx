@@ -9,6 +9,7 @@ import { productosService } from "@/services/productosService";
 import {
   clientesAdminService,
   datosCliente,
+  GuardadoClienteError,
   type DatosCliente,
 } from "@/services/clientesAdminService";
 import type { Cliente, PrecioCliente, Producto } from "@/types/schemas";
@@ -52,6 +53,8 @@ function Editor({ id }: { id?: string }) {
     [loading, setLoading] = useState(!!id),
     [loadError, setLoadError] = useState(""),
     [error, setError] = useState(""),
+    [success, setSuccess] = useState(""),
+    [confirmDelete, setConfirmDelete] = useState(false),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false),
@@ -102,26 +105,74 @@ function Editor({ id }: { id?: string }) {
     }
     if (!review) {
       setError("");
+      setSuccess("");
       setReview(true);
       return;
     }
     lock.current = true;
     setBusy(true);
+    setError("");
+    setSuccess("");
     const target = id ?? creationId;
+    let sent = false;
     try {
-      sessionStorage.setItem(key, target);
-    } catch {}
-    try {
-      await clientesAdminService.guardar(target, parsed.data, !id);
+      await clientesAdminService.guardar(target, parsed.data, !id, () => {
+        sent = true;
+        try {
+          sessionStorage.setItem(key, target);
+        } catch {}
+      });
       try {
         sessionStorage.removeItem(key);
       } catch {}
       setSaved(true);
       navigate(`/cartera/${target}`, { replace: true });
     } catch (e) {
-      setPending(target);
+      if (sent && (!(e instanceof GuardadoClienteError) || e.incierto)) {
+        setPending(target);
+      } else {
+        try {
+          sessionStorage.removeItem(key);
+        } catch {}
+        setReview(false);
+      }
       setError(
         e instanceof Error ? e.message : "No se pudo confirmar el guardado.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  async function handleEliminar() {
+    if (!client || lock.current || busy || !!pending) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await clientesAdminService.eliminarODesactivar(client);
+      setConfirmDelete(false);
+      if (res.accion === "ELIMINADO") {
+        navigate("/cartera", { replace: true });
+        return;
+      }
+      if (res.cliente) {
+        setClient(res.cliente);
+        setForm({
+          nombre_tienda: res.cliente.nombre_tienda,
+          contacto: res.cliente.contacto,
+          telefono: res.cliente.telefono,
+          direccion: res.cliente.direccion,
+          tipo_cliente: res.cliente.tipo_cliente,
+          activo: res.cliente.activo,
+        });
+      }
+      setSuccess(res.mensaje);
+    } catch (e) {
+      setConfirmDelete(false);
+      setError(
+        e instanceof Error ? e.message : "No se pudo eliminar el cliente.",
       );
     } finally {
       lock.current = false;
@@ -131,6 +182,7 @@ function Editor({ id }: { id?: string }) {
   const field = (name: keyof DatosCliente, value: unknown) => {
     setForm((p) => ({ ...p, [name]: value }));
     setReview(false);
+    setSuccess("");
   };
   return (
     <>
@@ -146,6 +198,11 @@ function Editor({ id }: { id?: string }) {
           </Link>
         </Button>
       </div>
+      {success && (
+        <p role="status" className="order-success">
+          {success}
+        </p>
+      )}
       {loading ? (
         <div className="empty-state" role="status">
           Consultando cliente…
@@ -328,6 +385,45 @@ function Editor({ id }: { id?: string }) {
             )}
           </section>
           {id && <Precios key={id} clienteId={id} />}
+          {id && client && (
+            <section className="catalog-panel client-editor">
+              <h2>Eliminación segura</h2>
+              <p className="catalog-footnote">
+                Un cliente solo se elimina físicamente si no tiene saldo en
+                cartera, remisiones, abonos ni documentos asociados. Si existen
+                registros financieros o comerciales, se desactivará lógicamente
+                para conservar el historial.
+              </p>
+              {confirmDelete ? (
+                <div className="receipt-tools">
+                  <Button
+                    type="button"
+                    disabled={busy || !!pending}
+                    onClick={() => void handleEliminar()}
+                  >
+                    Confirmar eliminación
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || !!pending}
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || !!pending}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Eliminar cliente
+                </Button>
+              )}
+            </section>
+          )}
         </>
       )}
     </>

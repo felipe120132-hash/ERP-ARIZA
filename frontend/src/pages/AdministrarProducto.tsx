@@ -15,10 +15,20 @@ import {
   productosAdminService,
   type DatosProducto,
 } from "@/services/productosAdminService";
-import type { Producto } from "@/types/schemas";
+import { uuidSchema, type Producto } from "@/types/schemas";
 import { formatCOP } from "@/lib/cartera";
-import { inventarioService, type MovimientoInput } from "@/services/inventarioService";
-const categorias = ["Comida", "Liquidos", "Accesorios", "Equipos", "Plantas", "Hamsters"];
+import {
+  inventarioService,
+  type MovimientoInput,
+} from "@/services/inventarioService";
+const categorias = [
+  "Comida",
+  "Liquidos",
+  "Accesorios",
+  "Equipos",
+  "Plantas",
+  "Hamsters",
+];
 const origenes = ["Nacional", "Importado"];
 type Form = Omit<
   DatosProducto,
@@ -86,6 +96,7 @@ function Editor({ id }: { id?: string }) {
     [success, setSuccess] = useState(""),
     [busy, setBusy] = useState(false),
     [review, setReview] = useState(false),
+    [confirmDelete, setConfirmDelete] = useState(false),
     [attempt, setAttempt] = useState(0),
     [ack, setAck] = useState(false);
   const lock = useRef(false);
@@ -93,7 +104,11 @@ function Editor({ id }: { id?: string }) {
   const initialMovementKey = useRef(crypto.randomUUID());
   async function finishCreation(p: Producto, value: Pending) {
     const movement = value.initialMovement;
-    if (!movement) { clearPending(); navigate(`/productos/${p.id}/editar`, { replace: true }); return; }
+    if (!movement) {
+      clearPending();
+      navigate(`/productos/${p.id}/editar`, { replace: true });
+      return;
+    }
     const movementStorage = `ariza:movimiento:${user!.id}:${p.id}`;
     // Creation and inventory are two transactions. Preserve the entry before attempting it.
     sessionStorage.setItem(movementStorage, JSON.stringify(movement));
@@ -103,7 +118,10 @@ function Editor({ id }: { id?: string }) {
       sessionStorage.removeItem(movementStorage);
       navigate(`/productos/${p.id}/editar`, { replace: true });
     } catch {
-      navigate(`/inventario/${p.id}/movimiento`, { replace: true, state: { initialEntry: true } });
+      navigate(`/inventario/${p.id}/movimiento`, {
+        replace: true,
+        state: { initialEntry: true },
+      });
     }
   }
   function accept(p: Producto) {
@@ -125,7 +143,7 @@ function Editor({ id }: { id?: string }) {
   }
   useEffect(() => {
     if (!id) return;
-    if (!z.string().uuid().safeParse(id).success) {
+    if (!uuidSchema.safeParse(id).success) {
       setLoadError("Identificador de producto inválido.");
       setLoading(false);
       return;
@@ -178,7 +196,10 @@ function Editor({ id }: { id?: string }) {
         remember(value);
         sent = true;
       });
-      if (!id && value.kind === "datos") { await finishCreation(p, value); return; }
+      if (!id && value.kind === "datos") {
+        await finishCreation(p, value);
+        return;
+      }
       clearPending();
       if (value.kind === "foto")
         setProduct((old) => (old ? { ...old, imagen_path: p.imagen_path } : p));
@@ -207,15 +228,17 @@ function Editor({ id }: { id?: string }) {
       "precio_distribuidor",
       "stock_minimo",
     ] as const)
-      if (!/^\d+(\.\d{1,2})?$/.test(form[k]))
+      if (!/^\d+(\.\d{1,2})?$/.test(form[k].trim().replace(",", ".")))
         throw new Error(
           "Precios y stock mínimo deben ser números positivos o cero, con máximo dos decimales.",
         );
     return datosProducto.parse({
       ...form,
-      precio_tienda: Number(form.precio_tienda),
-      precio_distribuidor: Number(form.precio_distribuidor),
-      stock_minimo: Number(form.stock_minimo),
+      precio_tienda: Number(form.precio_tienda.trim().replace(",", ".")),
+      precio_distribuidor: Number(
+        form.precio_distribuidor.trim().replace(",", "."),
+      ),
+      stock_minimo: Number(form.stock_minimo.trim().replace(",", ".")),
     });
   }
   async function save(e: FormEvent) {
@@ -223,22 +246,45 @@ function Editor({ id }: { id?: string }) {
     if (busy || pending) return;
     try {
       const values = parsedForm();
-      if ((!product || form.categoria !== product.categoria) && !categorias.includes(values.categoria)) throw new Error("Selecciona una categoría de la lista.");
-      if ((!product || form.origen !== product.origen) && !origenes.includes(values.origen ?? "")) throw new Error("Selecciona Nacional o Importado como origen.");
-      if (!id && (!/^\d+(\.\d{1,2})?$/.test(initialQuantity) || Number(initialQuantity) > 9999999999.99)) throw new Error("La cantidad inicial debe ser cero o mayor, con máximo dos decimales.");
-      if (!id && Number(initialQuantity) > 0 && !values.activo) throw new Error("Activa el producto para registrar su ingreso inicial.");
+      if (
+        (!product || form.categoria !== product.categoria) &&
+        !categorias.includes(values.categoria)
+      )
+        throw new Error("Selecciona una categoría de la lista.");
+      if (
+        (!product || form.origen !== product.origen) &&
+        !origenes.includes(values.origen ?? "")
+      )
+        throw new Error("Selecciona Nacional o Importado como origen.");
+      const normInit = initialQuantity.trim().replace(",", ".");
+      if (!id && (!/^\d+(\.\d{1,2})?$/.test(normInit) || Number(normInit) > 9999999999.99))
+        throw new Error(
+          "La cantidad inicial debe ser cero o mayor, con máximo dos decimales.",
+        );
+      if (!id && Number(normInit) > 0 && !values.activo)
+        throw new Error(
+          "Activa el producto para registrar su ingreso inicial.",
+        );
       if (!review) {
         setReview(true);
         setError("");
         return;
       }
       const target = id ?? creationId;
-      const initialMovement: MovimientoInput | undefined = !id && Number(initialQuantity) > 0 ? {
-        p_producto_id: target, p_tipo: "ENTRADA", p_cantidad: Number(initialQuantity),
-        p_motivo: "Ingreso inicial al crear el producto", p_idempotency_key: initialMovementKey.current, p_stock_esperado: null,
-      } : undefined;
-      await mutate({ id: target, kind: "datos", values, initialMovement }, (sent) =>
-        productosAdminService.guardar(target, values, product, sent),
+      const initialMovement: MovimientoInput | undefined =
+        !id && Number(normInit) > 0
+          ? {
+              p_producto_id: target,
+              p_tipo: "ENTRADA",
+              p_cantidad: Number(normInit),
+              p_motivo: "Ingreso inicial al crear el producto",
+              p_idempotency_key: initialMovementKey.current,
+              p_stock_esperado: null,
+            }
+          : undefined;
+      await mutate(
+        { id: target, kind: "datos", values, initialMovement },
+        (sent) => productosAdminService.guardar(target, values, product, sent),
       );
     } catch (e) {
       setError(
@@ -248,6 +294,31 @@ function Editor({ id }: { id?: string }) {
             ? e.message
             : "Revisa los datos del producto.",
       );
+    }
+  }
+  async function handleEliminar() {
+    if (!product || busy || pending || lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await productosAdminService.eliminarODesactivar(product);
+      setConfirmDelete(false);
+      if (res.accion === "ELIMINADO") {
+        navigate("/productos", { replace: true });
+        return;
+      }
+      if (res.producto) accept(res.producto);
+      setSuccess(res.mensaje);
+    } catch (e) {
+      setConfirmDelete(false);
+      setError(
+        e instanceof Error ? e.message : "No se pudo eliminar el producto.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
   }
   async function resolve() {
@@ -273,7 +344,10 @@ function Editor({ id }: { id?: string }) {
         throw new Error(
           "El producto consultado no refleja los cambios enviados. Revisa sus datos antes de habilitar otro intento.",
         );
-      if (!id && pending.kind === "datos") { await finishCreation(p, pending); return; }
+      if (!id && pending.kind === "datos") {
+        await finishCreation(p, pending);
+        return;
+      }
       clearPending();
       accept(p);
       setSuccess("El cambio está confirmado en el producto.");
@@ -400,30 +474,66 @@ function Editor({ id }: { id?: string }) {
                       value={form[name] ?? ""}
                       required
                       maxLength={name === "nombre" ? 200 : 100}
-                      onChange={(e) =>
-                        change(
-                          name,
-                          e.target.value,
-                        )
-                      }
+                      onChange={(e) => change(name, e.target.value)}
                     />
                   </div>
                 ))}
-                {([ ["categoria", "Categoría", categorias], ["origen", "Origen", origenes] ] as const).map(([name, label, options]) => (
+                {(
+                  [
+                    ["categoria", "Categoría", categorias],
+                    ["origen", "Origen", origenes],
+                  ] as const
+                ).map(([name, label, options]) => (
                   <div key={name}>
                     <Label htmlFor={`producto-${name}`}>{label}</Label>
-                    <select id={`producto-${name}`} value={form[name] ?? ""} required={!id || !!form[name]} onChange={e => change(name, e.target.value || null)}>
-                      <option value="" disabled>Seleccionar {label.toLowerCase()}</option>
-                      {product && form[name] && !options.includes(form[name]!) && <option value={form[name]!}>{form[name]} (valor actual)</option>}
-                      {options.map(option => <option key={option} value={option}>{option}</option>)}
+                    <select
+                      id={`producto-${name}`}
+                      value={form[name] ?? ""}
+                      required={!id || !!form[name]}
+                      onChange={(e) => change(name, e.target.value || null)}
+                    >
+                      <option value="" disabled>
+                        Seleccionar {label.toLowerCase()}
+                      </option>
+                      {product &&
+                        form[name] &&
+                        !options.includes(form[name]!) && (
+                          <option value={form[name]!}>
+                            {form[name]} (valor actual)
+                          </option>
+                        )}
+                      {options.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 ))}
-                {!id && <div>
-                  <Label htmlFor="producto-cantidad-inicial">Cantidad inicial que ingresa</Label>
-                  <Input id="producto-cantidad-inicial" type="number" min="0" max="9999999999.99" step="0.01" required value={initialQuantity} onChange={e => { setInitialQuantity(e.target.value); setReview(false); }} />
-                  <p className="catalog-footnote">Se registrará una entrada en el kardex. Usa cero si todavía no recibes mercancía.</p>
-                </div>}
+                {!id && (
+                  <div>
+                    <Label htmlFor="producto-cantidad-inicial">
+                      Cantidad inicial que ingresa
+                    </Label>
+                    <Input
+                      id="producto-cantidad-inicial"
+                      type="number"
+                      min="0"
+                      max="9999999999.99"
+                      step="0.01"
+                      required
+                      value={initialQuantity}
+                      onChange={(e) => {
+                        setInitialQuantity(e.target.value);
+                        setReview(false);
+                      }}
+                    />
+                    <p className="catalog-footnote">
+                      Se registrará una entrada en el kardex. Usa cero si
+                      todavía no recibes mercancía.
+                    </p>
+                  </div>
+                )}
                 {(
                   [
                     ["precio_tienda", "Precio tienda (COP)"],
@@ -484,7 +594,15 @@ function Editor({ id }: { id?: string }) {
                       IVA: {form.tasa_iva}% · Stock mínimo: {form.stock_minimo}{" "}
                       · {form.activo ? "Activo" : "Inactivo"}
                     </p>
-                    {!id && <p>Ingreso inicial: {Number(initialQuantity).toLocaleString("es-CO")} unidades. Primero se crea el producto y después se registra la entrada; si esta no se confirma, podrás recuperarla sin crear otro producto.</p>}
+                    {!id && (
+                      <p>
+                        Ingreso inicial:{" "}
+                        {Number(initialQuantity).toLocaleString("es-CO")}{" "}
+                        unidades. Primero se crea el producto y después se
+                        registra la entrada; si esta no se confirma, podrás
+                        recuperarla sin crear otro producto.
+                      </p>
+                    )}
                     <p>
                       {form.activo
                         ? "Los precios se usarán en ventas futuras, salvo acuerdos especiales por cliente."
@@ -526,16 +644,72 @@ function Editor({ id }: { id?: string }) {
             </form>
           </section>
           {product ? (
-            <div><section className="catalog-panel product-photo-editor"><h2>Existencias</h2><p>{product.stock_actual.toLocaleString("es-CO")} unidades actuales</p><Button asChild variant="outline"><Link to={`/inventario/${product.id}/movimiento`}>Registrar entrada o ajustar cantidad</Link></Button></section><ProductoFoto
-              producto={product}
-              disabled={busy || !!pending}
-              guardar={async (file) => {
-                const path = `productos/${product.id}/${crypto.randomUUID()}.${extensionesFoto[file.type]}`;
-                await mutate({ id: product.id, kind: "foto", path }, (sent) =>
-                  productosAdminService.imagen(product, file, path, sent),
-                );
-              }}
-            /></div>
+            <div>
+              <section className="catalog-panel product-photo-editor">
+                <h2>Existencias</h2>
+                <p>
+                  {product.stock_actual.toLocaleString("es-CO")} unidades
+                  actuales
+                </p>
+                <div className="receipt-tools">
+                  <Button asChild variant="outline">
+                    <Link to={`/inventario/${product.id}/movimiento`}>
+                      Registrar entrada o ajustar cantidad
+                    </Link>
+                  </Button>
+                  <Button asChild variant="ghost">
+                    <Link to={`/inventario/${product.id}`}>Ver kardex</Link>
+                  </Button>
+                </div>
+              </section>
+              <ProductoFoto
+                producto={product}
+                disabled={busy || !!pending}
+                guardar={async (file) => {
+                  const path = `productos/${product.id}/${crypto.randomUUID()}.${extensionesFoto[file.type]}`;
+                  await mutate({ id: product.id, kind: "foto", path }, (sent) =>
+                    productosAdminService.imagen(product, file, path, sent),
+                  );
+                }}
+              />
+              <section className="catalog-panel product-photo-editor">
+                <h2>Eliminación segura</h2>
+                <p className="catalog-footnote">
+                  Si el producto tiene movimientos en Kardex, remisiones o
+                  existencias, se desactivará lógicamente para conservar el
+                  historial. Si no tiene dependencias, se eliminará de forma
+                  permanente.
+                </p>
+                {confirmDelete ? (
+                  <div className="receipt-tools">
+                    <Button
+                      type="button"
+                      disabled={busy || !!pending}
+                      onClick={() => void handleEliminar()}
+                    >
+                      Confirmar eliminación
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy || !!pending}
+                      onClick={() => setConfirmDelete(false)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || !!pending}
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    Eliminar producto
+                  </Button>
+                )}
+              </section>
+            </div>
           ) : (
             <section className="catalog-panel product-photo-editor">
               <span className="eyebrow">FOTOGRAFÍA</span>

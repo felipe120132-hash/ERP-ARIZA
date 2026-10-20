@@ -84,16 +84,22 @@ Ejecuta un flujo end-to-end completo usando los servicios ya implementados:
 
 ## Estado actual
 
-**Modelo y Controlador completos, validados (`npm run validar:modelo`, `npm run probar:servicios`) y endurecidos en seguridad (Supabase Security Advisor revisado). Frontend pendiente de construir.**
+**Modelo, Controlador, Frontend (`frontend/`), Edge Functions (`supabase/functions/onedrive`) y Suite de QA Automatizada completos y validados.**
 
 | Capa | Contenido | Estado |
 |---|---|---|
-| **Modelo** | 11 tablas + 2 vistas — schemas Zod, tipos TypeScript, validación con `npm run validar:modelo` | ✅ Completo y validado |
-| **Controlador** | 7 servicios (productos, clientes, remisiones, cartera, gastos, documentos, OneDrive) + AuthContext + RutaProtegida + RPCs en Supabase (`crear_remision`, `registrar_abono`, `anular_remision`, `actualizar_pdf_remision`, `resumen_financiero_mensual`) — validado con `npm run probar:servicios` (8 pasos) | ✅ Completo y validado |
-| **Seguridad** | RLS activado/forzado, rol `anon` aislado con 0 permisos, `search_path` inmutable, vista con `security_invoker`, RPCs con permisos por rol | 🛡️ Endurecido (Security Advisor) |
-| **Frontend** | Páginas, componentes, interfaz de usuario | 🔲 Pendiente de construir |
+| **Modelo** | 11 tablas + 2 vistas + tablas empresariales OneDrive (`onedrive_empresa`, `onedrive_oauth`, `onedrive_archivos`) — schemas Zod, tipos TypeScript, migraciones `001` a `007` | ✅ Completo y validado |
+| **Controlador y RPCs** | Servicios (`productos`, `productosAdmin`, `clientes`, `clientesAdmin`, `remisiones`, `cartera`, `gastos`, `presupuestos`, `inventario`, `documentosEmpresa`) + Edge Function `onedrive` + RPCs en PostgreSQL (`crear_remision`, `registrar_abono`, `editar_abono_cartera`, `anular_remision`, `actualizar_pdf_remision`, `resumen_financiero_mensual`, `registrar_movimiento_inventario`) | ✅ Completo y validado |
+| **Seguridad** | RLS activado/forzado, rol `anon` aislado con 0 permisos, `search_path` inmutable, vista con `security_invoker`, RPCs con permisos por rol (`es_admin_activo()`) y cifrado de tokens OneDrive en servidor | 🛡️ Endurecido (Security Advisor) |
+| **Frontend (`frontend/`)** | Aplicación completa en React + TypeScript + Vite + Tailwind + shadcn/ui: Resumen, Catálogo/Pedidos, Remisiones (PDF/Impresión/Guardado en OneDrive), Inventario y Kardex (Entradas, Salidas y Ajustes), Administración de Productos e Imágenes, Cartera y Administración de Clientes (con edición controlada de abonos), Finanzas (Presupuestos y CRUD de Gastos) y Centro Documental OneDrive (con subida, descarga y eliminación segura) | ✅ Completo y validado |
+| **QA y Pruebas Automatizadas** | **111 pruebas E2E en Playwright** (`npx playwright test`) + **10 pruebas unitarias del backend OneDrive** (`node --test tests/onedrive-backend.mjs`) cubriendo todas las observaciones de `Test ERP.xlsx` (UI/Zoom/Móvil, Remisiones OneDrive, Inventario/Kardex/Productos, Cartera/Clientes/Abonos, Finanzas/Gastos y Documentos) | ✅ 121/121 pasando |
 
-👉 **Punto de partida para el equipo de Frontend:** Consulta [docs/guia_frontend.md](docs/guia_frontend.md) para ver el inventario completo de servicios, tipos, firmas, ejemplos de uso y manejo de autenticación.
+👉 **Documentación técnica:**
+- [docs/estructura_proyecto.md](docs/estructura_proyecto.md) — Arquitectura general y estructura de carpetas.
+- [docs/diccionario_datos.md](docs/diccionario_datos.md) — Modelo de datos, tablas, columnas y funciones RPC.
+- [docs/contrato_api_ariza_erp.md](docs/contrato_api_ariza_erp.md) — Contrato de API REST (PostgREST), RPCs y reglas de negocio.
+- [docs/guia_frontend.md](docs/guia_frontend.md) — Inventario de servicios, firmas y ejemplos de uso.
+- [docs/ONEDRIVE-DESPLIEGUE.md](docs/ONEDRIVE-DESPLIEGUE.md) — Contrato y guía de despliegue de la integración empresarial con Microsoft OneDrive.
 
 ---
 
@@ -101,23 +107,32 @@ Ejecuta un flujo end-to-end completo usando los servicios ya implementados:
 
 ```bash
 # Configurar secrets ANTES de desplegar
-supabase secrets set CLIENT_ID=xxx CLIENT_SECRET=yyy TENANT_ID=zzz
+supabase secrets set CLIENT_ID=xxx CLIENT_SECRET=yyy ONEDRIVE_ENCRYPTION_KEY=zzz
 
-# Desplegar
-supabase functions deploy onedrive-auth onedrive-refresh
+# Desplegar endpoint empresarial y endpoints retirados (HTTP 410)
+supabase functions deploy onedrive onedrive-auth onedrive-refresh
 ```
 
-Ver instrucciones completas en [src/services/onedriveService.ts](src/services/onedriveService.ts).
+Ver instrucciones detalladas en [docs/ONEDRIVE-DESPLIEGUE.md](docs/ONEDRIVE-DESPLIEGUE.md).
 
-## Frontend — primera fase
+## Ejecución del Frontend y Suite de Pruebas (`frontend/`)
 
-La aplicación operativa está en [`frontend/`](frontend/README.md). Conserva sus propias dependencias y configuración para no reemplazar los servicios y herramientas del backend.
+La aplicación operativa se encuentra en [`frontend/`](frontend/README.md).
 
 ```sh
 cd frontend
 npm ci
 # Crear .env.local a partir de .env.example con URL y clave pública de Supabase.
 npm run dev
+
+# Compilación de producción (TypeScript + Vite)
+npm run build
+
+# Ejecutar las 111 pruebas E2E de Playwright
+npx playwright test
+
+# Ejecutar las 10 pruebas unitarias del backend OneDrive
+node --test tests/onedrive-backend.mjs
 ```
 
-Consulta el [listado de pendientes para la próxima fase](frontend/PENDIENTES-FRONTEND.md).
+Consulta el detalle de entregas y verificaciones en [frontend/README.md](frontend/README.md) y [frontend/PENDIENTES-FRONTEND.md](frontend/PENDIENTES-FRONTEND.md).

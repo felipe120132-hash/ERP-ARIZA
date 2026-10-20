@@ -15,8 +15,12 @@ import { clientesService } from "@/services/clientesService";
 import { remisionesService } from "@/services/remisionesService";
 import { carteraService } from "@/services/carteraService";
 import { useAuth } from "@/context/AuthContext";
-import { formatCOP, validarMonto } from "@/lib/cartera";
-import type { Cliente, Remision } from "@/types/schemas";
+import {
+  formatCOP,
+  validarMonto,
+  calcularSaldosRemision,
+} from "@/lib/cartera";
+import type { Cliente, Remision, AbonoCartera } from "@/types/schemas";
 import type { RegistrarAbonoInput } from "@/types/rpcSchemas";
 export default function RegistrarAbono({
   clienteId,
@@ -31,6 +35,7 @@ export default function RegistrarAbono({
   const storageKey = `ariza:abono-incierto:${user?.id}:${clienteId}`;
   const [cliente, setCliente] = useState<Cliente | null>(null),
     [remisiones, setRemisiones] = useState<Remision[]>([]),
+    [abonos, setAbonos] = useState<AbonoCartera[]>([]),
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0);
@@ -61,8 +66,9 @@ export default function RegistrarAbono({
         tipo_pago: "CREDITO",
         estado: "PENDIENTE",
       }),
+      carteraService.listarAbonos({ cliente_id: clienteId }),
     ])
-      .then(([customer, sales]) => {
+      .then(([customer, sales, payments]) => {
         if (!active) return;
         setCliente(customer.data);
         setRemisiones(
@@ -72,6 +78,9 @@ export default function RegistrarAbono({
               x.tipo_pago === "CREDITO" &&
               x.estado === "PENDIENTE",
           ),
+        );
+        setAbonos(
+          (payments.data ?? []).filter((x) => x.cliente_id === clienteId),
         );
         setLoadError(customer.error ?? sales.error);
         setLoading(false);
@@ -103,7 +112,15 @@ export default function RegistrarAbono({
       /* In-memory guard remains active. */
     }
   }
-  const amountError = validarMonto(monto, cliente?.saldo_cartera ?? 0),
+  const selectedSale = remisiones.find((x) => x.id === remision);
+  const selectedSaleBalance = selectedSale
+    ? calcularSaldosRemision(selectedSale, abonos).pendiente
+    : null;
+  const amountError = validarMonto(
+      monto,
+      cliente?.saldo_cartera ?? 0,
+      selectedSaleBalance,
+    ),
     invalidRemision = !!remision && !remisiones.some((x) => x.id === remision);
   const valid =
     !!cliente && !loading && !loadError && !amountError && !invalidRemision;
@@ -122,10 +139,11 @@ export default function RegistrarAbono({
     }
     setBusy(true);
     setError(null);
+    const normMonto = Number(monto.trim().replace(",", "."));
     try {
       const result = await carteraService.registrarAbono({
         p_cliente_id: clienteId,
-        p_monto: Number(monto),
+        p_monto: normMonto,
         p_metodo_pago: metodo,
         p_remision_id: remision || null,
       });
@@ -206,7 +224,8 @@ export default function RegistrarAbono({
                     <CheckCircle2 size={34} />
                     <h3>Abono registrado</h3>
                     <p>
-                      {formatCOP(Number(monto))} · {metodo}
+                      {formatCOP(Number(monto.trim().replace(",", ".")))} ·{" "}
+                      {metodo}
                     </p>
                     <p>
                       El saldo y el historial se vuelven a consultar al
@@ -257,7 +276,14 @@ export default function RegistrarAbono({
                         inputMode="decimal"
                         min="0.01"
                         step="0.01"
-                        max={cliente.saldo_cartera}
+                        max={
+                          selectedSaleBalance !== null
+                            ? Math.min(
+                                cliente.saldo_cartera,
+                                selectedSaleBalance,
+                              )
+                            : cliente.saldo_cartera
+                        }
                         placeholder="0,00"
                         value={monto}
                         onChange={(e) => {
@@ -297,22 +323,27 @@ export default function RegistrarAbono({
                         }}
                       >
                         <option value="">Abono general a la cartera</option>
-                        {remisiones.map((x) => (
-                          <option key={x.id} value={x.id}>
-                            Remisión #{x.consecutivo}
-                          </option>
-                        ))}
+                        {remisiones.map((x) => {
+                          const s = calcularSaldosRemision(x, abonos);
+                          return (
+                            <option key={x.id} value={x.id}>
+                              Remisión #{x.consecutivo} (Saldo:{" "}
+                              {formatCOP(s.pendiente)})
+                            </option>
+                          );
+                        })}
                       </select>
                       <p className="field-help">
-                        Puedes asociarlo a una remisión a crédito pendiente de
-                        este cliente. Su saldo individual no está disponible en
-                        esta consulta.
+                        {selectedSale
+                          ? `Saldo pendiente de la Remisión #${selectedSale.consecutivo}: ${formatCOP(selectedSaleBalance ?? 0)}.`
+                          : "Puedes asociarlo a una remisión a crédito pendiente o aplicarlo al saldo general."}
                       </p>
                     </fieldset>
                     {review && (
                       <div className="order-review">
                         <strong>
-                          Confirmar recepción de {formatCOP(Number(monto))}
+                          Confirmar recepción de{" "}
+                          {formatCOP(Number(monto.trim().replace(",", ".")))}
                         </strong>
                         <p>
                           {cliente.nombre_tienda} · {metodo} ·{" "}

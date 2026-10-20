@@ -416,3 +416,83 @@ test("productos: listado recorre páginas del servidor y detecta consulta incomp
     page.getByRole("link", { name: "Editar Producto 1" }),
   ).toHaveCount(0);
 });
+
+test("productos: eliminación segura desactiva si hay historial y elimina físicamente si no hay dependencias", async ({
+  page,
+}) => {
+  await mock(page, { role: "ADMIN" });
+  const conHistorial = { ...products[0], stock_actual: 0, activo: true };
+  const sinHistorial = { ...products[1], stock_actual: 0, activo: true };
+  let lista = [conHistorial, sinHistorial];
+  const methods: string[] = [];
+
+  await page.route(`${api}/rest/v1/kardex*`, (r) => {
+    const url = r.request().url();
+    const hasHistory = url.includes(conHistorial.id);
+    return r.fulfill({
+      json: hasHistory ? [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }] : [],
+      headers: {
+        "access-control-expose-headers": "content-range",
+        "content-range": hasHistory ? "0-0/1" : "*/0",
+      },
+    });
+  });
+  await page.route(`${api}/rest/v1/detalles_remision*`, (r) =>
+    r.fulfill({
+      json: [],
+      headers: {
+        "access-control-expose-headers": "content-range",
+        "content-range": "*/0",
+      },
+    }),
+  );
+  await page.route(`${api}/rest/v1/precios_cliente*`, (r) =>
+    r.fulfill({ json: [] }),
+  );
+  await page.route(`${api}/rest/v1/productos*`, (r) => {
+    const req = r.request();
+    if (req.method() === "PATCH") {
+      methods.push("PATCH");
+      const body = req.postDataJSON();
+      lista = lista.map((p) =>
+        req.url().includes(p.id) ? { ...p, ...body } : p,
+      );
+      return r.fulfill({
+        json: lista.find((p) => req.url().includes(p.id)),
+      });
+    }
+    if (req.method() === "DELETE") {
+      methods.push("DELETE");
+      const deleted = lista.find((p) => req.url().includes(p.id));
+      lista = lista.filter((p) => !req.url().includes(p.id));
+      return r.fulfill({ json: deleted ? [{ id: deleted.id }] : [] });
+    }
+    return r.fulfill({
+      json: lista,
+      headers: {
+        "access-control-expose-headers": "content-range",
+        "content-range": `0-${Math.max(0, lista.length - 1)}/${lista.length}`,
+      },
+    });
+  });
+
+  await page.goto("/productos");
+  // 1. Intentar eliminar producto CON historial -> debe desactivar lógicamente (PATCH activo=false)
+  await page.getByRole("button", { name: `Eliminar ${conHistorial.nombre}` }).click();
+  await page.getByRole("button", { name: "Confirmar eliminación" }).click();
+  await expect(
+    page.getByText(/Se desactivó lógicamente para conservar la trazabilidad/),
+  ).toBeVisible();
+  expect(methods).toEqual(["PATCH"]);
+
+  // 2. Intentar eliminar producto SIN historial ni existencias -> debe eliminar físicamente (DELETE)
+  await page.getByRole("button", { name: `Eliminar ${sinHistorial.nombre}` }).click();
+  await page.getByRole("button", { name: "Confirmar eliminación" }).click();
+  await expect(
+    page.getByText("Producto eliminado permanentemente."),
+  ).toBeVisible();
+  expect(methods).toEqual(["PATCH", "DELETE"]);
+  await expect(
+    page.getByRole("link", { name: `Editar ${sinHistorial.nombre}` }),
+  ).toHaveCount(0);
+});

@@ -326,3 +326,110 @@ test("cartera vacía y errores recuperables", async ({ page }) => {
     page.getByRole("button", { name: "Reintentar cartera" }),
   ).toBeVisible();
 });
+
+test("edición controlada de abono actualiza saldo del cliente, saldo de remisión y conserva trazabilidad", async ({
+  page,
+}) => {
+  await mock(page, { role: "ADMIN" });
+  let balance = 125000.25;
+  let currentPayment = {
+    id: paymentId,
+    cliente_id: clientId,
+    remision_id: saleId,
+    monto: 25000.25,
+    metodo_pago: "TRANSFERENCIA",
+    fecha: now,
+    registrado_por: id,
+    created_at: now,
+  };
+  await page.route(`${api}/rest/v1/clientes*`, (route) => {
+    const req = route.request();
+    if (req.method() === "PATCH") {
+      const body = req.postDataJSON();
+      balance = body.saldo_cartera;
+      return route.fulfill({ json: { ...customer, saldo_cartera: balance } });
+    }
+    const single = req.url().includes("id=eq.");
+    return route.fulfill({
+      json: single
+        ? { ...customer, saldo_cartera: balance }
+        : [{ ...customer, saldo_cartera: balance }],
+    });
+  });
+  await page.route(`${api}/rest/v1/remisiones*`, (route) =>
+    route.fulfill({ json: [sale] }),
+  );
+  await page.route(`${api}/rest/v1/abonos_cartera*`, (route) => {
+    const req = route.request();
+    if (req.method() === "PATCH") {
+      const body = req.postDataJSON();
+      currentPayment = { ...currentPayment, ...body };
+      return route.fulfill({ json: currentPayment });
+    }
+    return route.fulfill({ json: [currentPayment] });
+  });
+  await page.route(`${api}/rest/v1/rpc/editar_abono_cartera`, (route) => {
+    const body = route.request().postDataJSON();
+    const prevBalance = balance;
+    balance = Math.round((balance + currentPayment.monto - body.p_monto) * 100) / 100;
+    const prevMonto = currentPayment.monto;
+    currentPayment = {
+      ...currentPayment,
+      monto: body.p_monto,
+      metodo_pago: body.p_metodo_pago,
+      remision_id: body.p_remision_id,
+    };
+    return route.fulfill({
+      json: {
+        abono_id: paymentId,
+        cliente_id: clientId,
+        monto_anterior: prevMonto,
+        monto_nuevo: body.p_monto,
+        saldo_anterior: prevBalance,
+        saldo_resultante: balance,
+        motivo: body.p_motivo,
+      },
+    });
+  });
+
+  await page.goto(`/cartera/${clientId}`);
+  // Verificar saldo antes de editar abono ($125.000,25)
+  await expect(page.locator(".client-balance")).toContainText("125.000,25");
+  await expect(page.getByRole("table")).toContainText("25.000,25");
+
+  // Abrir edición de abono
+  await page.getByRole("button", { name: `Editar abono ${paymentId}` }).click();
+  await expect(page.getByRole("heading", { name: "Editar abono" })).toBeVisible();
+
+  // Validar que un monto superior al total de la remisión ($119.000) sea rechazado
+  await page.getByLabel("Nuevo monto del abono (COP)").fill("130000");
+  await page
+    .getByLabel("Motivo de la corrección")
+    .fill("Error en lectura de soporte bancario");
+  await expect(
+    page.getByRole("button", { name: "Revisar corrección" }),
+  ).toBeDisabled();
+
+  // Ingresar nuevo monto válido ($50.000,50 -> reduce saldo en $25.000,25 adicionales -> nuevo saldo $100.000,00)
+  await page.getByLabel("Nuevo monto del abono (COP)").fill("50000.50");
+  await page.getByRole("button", { name: "Revisar corrección" }).click();
+  await expect(page.locator(".order-review")).toContainText("100.000,00");
+  await page.getByRole("button", { name: "Confirmar corrección" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Abono actualizado" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cerrar y ver historial" }).click();
+
+  // Verificar saldo después de editar abono ($100.000,00) y trazabilidad en tabla
+  await expect(page.locator(".client-balance")).toContainText("100.000,00");
+  await expect(page.getByRole("table")).toContainText("50.000,50");
+  await expect(page.getByRole("table")).toContainText(
+    "Error en lectura de soporte bancario",
+  );
+
+  // Verificar coherencia en pestaña de Remisiones (Total $119.000, Abonado $50.000,50, Saldo remisión $68.999,50)
+  await page.getByRole("button", { name: "Remisiones (1)" }).click();
+  await expect(page.getByRole("table")).toContainText("119.000,00");
+  await expect(page.getByRole("table")).toContainText("50.000,50");
+  await expect(page.getByRole("table")).toContainText("68.999,50");
+});

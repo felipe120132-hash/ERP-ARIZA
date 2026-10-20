@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Pencil, Package, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Package,
+  RefreshCw,
+  ArrowUpRight,
+  Trash2,
+  Power,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +35,10 @@ function Listado() {
   const [rows, setRows] = useState<Producto[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
+    [actionMessage, setActionMessage] = useState(""),
+    [actionError, setActionError] = useState(""),
+    [busyId, setBusyId] = useState<string | null>(null),
+    [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0),
     [search, setSearch] = useState(""),
     [activity, setActivity] = useState("todos"),
@@ -53,6 +65,60 @@ function Listado() {
       live = false;
     };
   }, [attempt]);
+
+  async function toggleActivo(producto: Producto) {
+    if (busyId) return;
+    setBusyId(producto.id);
+    setActionError("");
+    setActionMessage("");
+    try {
+      const updated = await productosAdminService.cambiarEstadoActivo(
+        producto,
+        !producto.activo,
+      );
+      setRows((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setActionMessage(
+        updated.activo
+          ? `Producto "${updated.nombre}" activado correctamente.`
+          : `Producto "${updated.nombre}" desactivado. Su historial se conserva.`,
+      );
+    } catch (e) {
+      setActionError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo cambiar el estado del producto.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function ejecutarEliminar(producto: Producto) {
+    if (busyId) return;
+    setBusyId(producto.id);
+    setActionError("");
+    setActionMessage("");
+    try {
+      const res = await productosAdminService.eliminarODesactivar(producto);
+      setConfirmDeleteId(null);
+      if (res.accion === "ELIMINADO") {
+        setRows((prev) => prev.filter((x) => x.id !== producto.id));
+      } else if (res.producto) {
+        setRows((prev) =>
+          prev.map((x) => (x.id === res.producto!.id ? res.producto! : x)),
+        );
+      }
+      setActionMessage(res.mensaje);
+    } catch (e) {
+      setConfirmDeleteId(null);
+      setActionError(
+        e instanceof Error ? e.message : "No se pudo eliminar el producto.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const filtered = rows.filter(
     (p) =>
       normalize(`${p.nombre} ${p.sku} ${p.categoria}`).includes(
@@ -68,9 +134,15 @@ function Listado() {
         <div>
           <span className="eyebrow">ADMINISTRACIÓN / PRODUCTOS</span>
           <h1>Tu catálogo, al día.</h1>
-          <p>Referencias, precios y fotos para la próxima venta.</p>
+          <p>
+            Administración centralizada de referencias, precios, estado e
+            inventario.
+          </p>
         </div>
         <div className="receipt-tools">
+          <Button asChild variant="outline">
+            <Link to="/inventario">Ver inventario</Link>
+          </Button>
           <Button asChild variant="outline">
             <Link to="/catalogo">Ver catálogo</Link>
           </Button>
@@ -82,6 +154,16 @@ function Listado() {
           </Button>
         </div>
       </div>
+      {actionMessage && (
+        <p role="status" className="order-success">
+          {actionMessage}
+        </p>
+      )}
+      {actionError && (
+        <p role="alert" className="error-box">
+          {actionError}
+        </p>
+      )}
       <section className="catalog-panel product-admin-list">
         <div className="product-admin-toolbar">
           <Input
@@ -162,15 +244,70 @@ function Listado() {
                         </span>
                       </td>
                       <td>
-                        <Button asChild variant="outline" size="sm">
-                          <Link
-                            to={`/productos/${p.id}/editar`}
-                            aria-label={`Editar ${p.nombre}`}
-                          >
-                            <Pencil size={14} />
-                            Editar
-                          </Link>
-                        </Button>
+                        {confirmDeleteId === p.id ? (
+                          <div className="receipt-tools">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={busyId === p.id}
+                              onClick={() => void ejecutarEliminar(p)}
+                            >
+                              Confirmar eliminación
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={busyId === p.id}
+                              onClick={() => setConfirmDeleteId(null)}
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="receipt-tools">
+                            <Button asChild variant="outline" size="sm">
+                              <Link
+                                to={`/productos/${p.id}/editar`}
+                                aria-label={`Editar ${p.nombre}`}
+                              >
+                                <Pencil size={14} />
+                                Editar
+                              </Link>
+                            </Button>
+                            <Button asChild variant="ghost" size="sm">
+                              <Link
+                                to={`/inventario/${p.id}`}
+                                aria-label={`Ver kardex de ${p.nombre}`}
+                              >
+                                <ArrowUpRight size={14} />
+                                Kardex
+                              </Link>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busyId === p.id}
+                              aria-label={`${p.activo ? "Desactivar" : "Activar"} ${p.nombre}`}
+                              onClick={() => void toggleActivo(p)}
+                            >
+                              <Power size={14} />
+                              {p.activo ? "Desactivar" : "Activar"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busyId === p.id}
+                              aria-label={`Eliminar ${p.nombre}`}
+                              onClick={() => setConfirmDeleteId(p.id)}
+                            >
+                              <Trash2 size={14} />
+                              Eliminar
+                            </Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

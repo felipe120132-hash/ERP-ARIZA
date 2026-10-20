@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Boxes } from "lucide-react";
+import { ArrowLeft, RefreshCw, Boxes, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { productosService } from "@/services/productosService";
 import {
   inventarioService,
   type TipoMovimiento,
 } from "@/services/inventarioService";
-import type { Producto, Kardex } from "@/types/schemas";
+import { uuidSchema, type Producto, type Kardex } from "@/types/schemas";
 import { useAuth } from "@/context/AuthContext";
 export default function KardexPage() {
   const { perfil } = useAuth();
@@ -31,7 +31,7 @@ export default function KardexPage() {
     setRows([]);
     async function load() {
       try {
-        if (!id || !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id))
+        if (!id || !uuidSchema.safeParse(id).success)
           throw new Error("El identificador del producto no es válido.");
         const [p, k] = await Promise.all([
           productosService.obtenerProductoPorId(id),
@@ -88,6 +88,14 @@ export default function KardexPage() {
             <Button asChild>
               <Link to={`/inventario/${id}/movimiento`}>
                 Preparar movimiento
+              </Link>
+            </Button>
+          )}
+          {perfil?.rol === "ADMIN" && product && !loading && !error && (
+            <Button asChild variant="outline">
+              <Link to={`/productos/${id}/editar`}>
+                <Pencil size={15} />
+                Editar producto
               </Link>
             </Button>
           )}
@@ -205,7 +213,12 @@ export default function KardexPage() {
                             : "Ajuste"}
                       </span>
                     </td>
-                    <td>{x.tipo_movimiento === "AJUSTE" && x.cantidad > 0 ? "+" : ""}{x.cantidad.toLocaleString("es-CO")}</td>
+                    <td>
+                      {x.tipo_movimiento === "AJUSTE" && x.cantidad > 0
+                        ? "+"
+                        : ""}
+                      {x.cantidad.toLocaleString("es-CO")}
+                    </td>
                     <td className="balance-cell">
                       {x.stock_resultante.toLocaleString("es-CO")}
                     </td>

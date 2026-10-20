@@ -8,14 +8,24 @@ import {
   Phone,
   MapPin,
   UserRound,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clientesService } from "@/services/clientesService";
-import { carteraService } from "@/services/carteraService";
+import {
+  carteraService,
+  obtenerAuditoriaAbonos,
+} from "@/services/carteraService";
 import { remisionesService } from "@/services/remisionesService";
 import RegistrarAbono from "@/components/cartera/RegistrarAbono";
-import { formatCOP } from "@/lib/cartera";
-import type { Cliente, AbonoCartera, Remision } from "@/types/schemas";
+import EditarAbono from "@/components/cartera/EditarAbono";
+import { formatCOP, calcularSaldosRemision } from "@/lib/cartera";
+import {
+  uuidSchema,
+  type Cliente,
+  type AbonoCartera,
+  type Remision,
+} from "@/types/schemas";
 export default function ClienteDetalle() {
   const { perfil } = useAuth();
   const { id } = useParams();
@@ -26,6 +36,12 @@ export default function ClienteDetalle() {
     [error, setError] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0),
     [pay, setPay] = useState(false),
+    [editingContext, setEditingContext] = useState<{
+      abono: AbonoCartera;
+      cliente: Cliente;
+      sales: Remision[];
+      abonos: AbonoCartera[];
+    } | null>(null),
     [tab, setTab] = useState<"abonos" | "remisiones">("abonos"),
     [page, setPage] = useState(1);
   useEffect(() => {
@@ -35,7 +51,7 @@ export default function ClienteDetalle() {
     setCliente(null);
     async function load() {
       try {
-        if (!id || !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id))
+        if (!id || !uuidSchema.safeParse(id).success)
           throw new Error("El identificador del cliente no es válido.");
         const [customer, payments, orders] = await Promise.all([
           clientesService.obtenerClientePorId(id),
@@ -71,6 +87,7 @@ export default function ClienteDetalle() {
     pages = Math.max(1, Math.ceil(count / 10)),
     current = Math.min(page, pages),
     saleNames = new Map(sales.map((x) => [x.id, x.consecutivo]));
+  const auditoria = obtenerAuditoriaAbonos(id);
   return (
     <>
       <div className="page-heading">
@@ -207,37 +224,69 @@ export default function ClienteDetalle() {
                             <th>Aplicación</th>
                             <th>Monto</th>
                             <th>Comprobante</th>
+                            {perfil?.rol === "ADMIN" && <th>Acciones</th>}
                           </tr>
                         </thead>
                         <tbody>
                           {abonos
                             .slice((current - 1) * 10, current * 10)
-                            .map((x) => (
-                              <tr key={x.id}>
-                                <td>{x.fecha.toLocaleString("es-CO")}</td>
-                                <td>{x.metodo_pago}</td>
-                                <td>
-                                  {x.remision_id ? (
-                                    <Link
-                                      className="ledger-link"
-                                      to={`/remisiones/${x.remision_id}`}
-                                    >
-                                      {saleNames.has(x.remision_id)
-                                        ? `Remisión #${saleNames.get(x.remision_id)}`
-                                        : "Ver remisión"}
-                                    </Link>
-                                  ) : (
-                                    "Cartera general"
+                            .map((x) => {
+                              const traza = auditoria[x.id];
+                              return (
+                                <tr key={x.id}>
+                                  <td>{x.fecha.toLocaleString("es-CO")}</td>
+                                  <td>{x.metodo_pago}</td>
+                                  <td>
+                                    {x.remision_id ? (
+                                      <Link
+                                        className="ledger-link"
+                                        to={`/remisiones/${x.remision_id}`}
+                                      >
+                                        {saleNames.has(x.remision_id)
+                                          ? `Remisión #${saleNames.get(x.remision_id)}`
+                                          : "Ver remisión"}
+                                      </Link>
+                                    ) : (
+                                      "Cartera general"
+                                    )}
+                                  </td>
+                                  <td className="balance-cell">
+                                    <strong>{formatCOP(x.monto)}</strong>
+                                    {traza && (
+                                      <small className="product-row-meta">
+                                        Corregido (antes{" "}
+                                        {formatCOP(traza.monto_anterior)}):{" "}
+                                        {traza.motivo}
+                                      </small>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <code className="receipt-id">{x.id}</code>
+                                  </td>
+                                  {perfil?.rol === "ADMIN" && (
+                                    <td>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label={`Editar abono ${x.id}`}
+                                        onClick={() =>
+                                          setEditingContext({
+                                            abono: x,
+                                            cliente,
+                                            sales,
+                                            abonos,
+                                          })
+                                        }
+                                      >
+                                        <Pencil size={14} />
+                                        Editar abono
+                                      </Button>
+                                    </td>
                                   )}
-                                </td>
-                                <td className="balance-cell">
-                                  {formatCOP(x.monto)}
-                                </td>
-                                <td>
-                                  <code className="receipt-id">{x.id}</code>
-                                </td>
-                              </tr>
-                            ))}
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
                     ) : (
@@ -249,37 +298,46 @@ export default function ClienteDetalle() {
                             <th>Pago</th>
                             <th>Estado</th>
                             <th>Total</th>
+                            <th>Abonado</th>
+                            <th>Saldo remisión</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sales
                             .slice((current - 1) * 10, current * 10)
-                            .map((x) => (
-                              <tr key={x.id}>
-                                <td>
-                                  <Link
-                                    className="ledger-link"
-                                    to={`/remisiones/${x.id}`}
-                                  >
-                                    #{x.consecutivo}
-                                  </Link>
-                                </td>
-                                <td>{x.fecha.toLocaleDateString("es-CO")}</td>
-                                <td>
-                                  {x.tipo_pago === "CREDITO"
-                                    ? "Crédito"
-                                    : "Contado"}
-                                </td>
-                                <td>
-                                  <span
-                                    className={`remision-status ${x.estado.toLowerCase()}`}
-                                  >
-                                    {x.estado}
-                                  </span>
-                                </td>
-                                <td>{formatCOP(x.total)}</td>
-                              </tr>
-                            ))}
+                            .map((x) => {
+                              const s = calcularSaldosRemision(x, abonos);
+                              return (
+                                <tr key={x.id}>
+                                  <td>
+                                    <Link
+                                      className="ledger-link"
+                                      to={`/remisiones/${x.id}`}
+                                    >
+                                      #{x.consecutivo}
+                                    </Link>
+                                  </td>
+                                  <td>{x.fecha.toLocaleDateString("es-CO")}</td>
+                                  <td>
+                                    {x.tipo_pago === "CREDITO"
+                                      ? "Crédito"
+                                      : "Contado"}
+                                  </td>
+                                  <td>
+                                    <span
+                                      className={`remision-status ${x.estado.toLowerCase()}`}
+                                    >
+                                      {x.estado}
+                                    </span>
+                                  </td>
+                                  <td>{formatCOP(x.total)}</td>
+                                  <td>{formatCOP(s.abonado)}</td>
+                                  <td className="balance-cell">
+                                    {formatCOP(s.pendiente)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
                     )}
@@ -310,9 +368,9 @@ export default function ClienteDetalle() {
               )}
             </section>
             <p className="catalog-footnote">
-              Los abonos generales reducen el saldo del cliente. No se asignan
-              desde esta pantalla a remisiones específicas ni se modifican sus
-              estados.
+              Los abonos generales reducen el saldo del cliente. Los abonos
+              asociados a una remisión descuentan tanto su saldo pendiente como
+              la cartera total del cliente.
             </p>
           </>
         )
@@ -323,6 +381,17 @@ export default function ClienteDetalle() {
           clienteId={id}
           onClose={() => setPay(false)}
           onRecorded={() => setAttempt((x) => x + 1)}
+        />
+      )}
+      {editingContext && (
+        <EditarAbono
+          key={editingContext.abono.id}
+          cliente={editingContext.cliente}
+          abono={editingContext.abono}
+          remisiones={editingContext.sales}
+          abonos={editingContext.abonos}
+          onClose={() => setEditingContext(null)}
+          onUpdated={() => setAttempt((x) => x + 1)}
         />
       )}
     </>

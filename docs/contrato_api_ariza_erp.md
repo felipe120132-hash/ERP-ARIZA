@@ -1,8 +1,8 @@
 # Contrato de API — ArizaERP
 
-**Backend:** Supabase (PostgreSQL + PostgREST autogenerado)
+**Backend:** Supabase (PostgreSQL + PostgREST autogenerado + Edge Function `/functions/v1/onedrive`)
 **Para:** Equipo de Frontend (React)
-**Regla de oro:** el frontend nunca arma URLs REST a mano — todo pasa por `supabase-js` (`supabase.from(...)`, `supabase.rpc(...)`). Este documento describe qué hay detrás de esas llamadas para que sepan qué esperar.
+**Regla de oro:** el frontend nunca arma URLs REST a mano — todo pasa por `supabase-js` (`supabase.from(...)`, `supabase.rpc(...)`, `supabase.functions.invoke(...)`). Este documento describe qué hay detrás de esas llamadas para que sepan qué esperar.
 
 ---
 
@@ -28,14 +28,6 @@ https://<tu-proyecto>.supabase.co/rest/v1/<nombre_de_la_tabla>
 
 Si la tabla se llama `productos`, el endpoint es `/rest/v1/productos`. Si se llama `remisiones`, es `/rest/v1/remisiones` — sin excepciones, sin configuración adicional. Por eso, en la práctica, saber "la API" es lo mismo que saber los nombres de tabla/columna de la sección 3 de este documento.
 
-Además, el frontend casi nunca toca esa URL directamente: con `supabase-js` se escribe `supabase.from('productos').select('*')` y la librería arma URL, headers y autenticación por debajo.
-
-Si el equipo quiere explorar o probar los endpoints "en vivo" (por ejemplo, en Postman, antes de escribir código React):
-
-- **Project Settings → API Docs** (o el botón "API" dentro de cada tabla en el Table Editor) muestra, ya con la URL real del proyecto, ejemplos de código listos para copiar en JavaScript y en `curl` crudo para cada tabla — Supabase lo genera solo a partir del esquema, no hay que escribirlo.
-- Esa misma página documenta también las 3 funciones RPC (`crear_remision`, `registrar_abono`, `resumen_financiero_mensual`) con su firma exacta.
-- Para importar todo a Postman/Insomnia de una vez: pedir la URL base con el header `Accept: application/openapi+json` devuelve el spec OpenAPI completo, importable directamente.
-
 ---
 
 ## 2. Formato de respuesta y manejo de errores
@@ -59,25 +51,17 @@ Todas se consumen con `supabase.from('nombre_tabla')`. La columna "Escritura" in
 | Tabla | Lectura | Escritura | Notas para el frontend |
 |---|---|---|---|
 | `perfiles` | Su propio perfil, o todos si es `ADMIN` | Solo `ADMIN` | Usar para saber el rol del usuario logueado: `supabase.from('perfiles').select('rol').eq('id', user.id).single()` |
-| `productos` | Cualquier autenticado | Solo `ADMIN` | Para el semáforo de stock, usar la vista `vista_alertas_stock`, no calcular el color en el frontend |
-| `clientes` | Cualquier autenticado | Solo `ADMIN` | — |
+| `productos` | Cualquier autenticado | Solo `ADMIN` | Para el semáforo de stock, usar la vista `vista_alertas_stock`, no calcular el color en el frontend. Si tiene kardex o remisiones asociadas, se desactiva lógicamente (`activo = false`) en lugar de eliminarse. |
+| `clientes` | Cualquier autenticado | Solo `ADMIN` | Si tiene remisiones, abonos, documentos o saldo pendiente, se desactiva lógicamente (`activo = false`) en lugar de eliminarse. |
 | `precios_cliente` | Cualquier autenticado | Solo `ADMIN` | Rara vez se consulta directo; normalmente el precio ya viene resuelto por el RPC `crear_remision` |
-| `remisiones` | Cualquier autenticado | INSERT: cualquiera (pero **usar el RPC `crear_remision`**, no insertar directo — ver sección 4); UPDATE (anular): solo `ADMIN` | — |
+| `remisiones` | Cualquier autenticado | INSERT: vía RPC `crear_remision`; UPDATE (anular): vía RPC `anular_remision` (`ADMIN`) | — |
 | `detalles_remision` | Cualquier autenticado | Igual que remisiones — **nunca insertar directo**, siempre vía `crear_remision` | Insertar manual salta el cálculo de precio/IVA y descuadra el encabezado |
 | `kardex` | Cualquier autenticado | Ninguna directa (triggers de ventas o RPC `registrar_movimiento_inventario`) | Tabla de solo lectura para SELECT; entradas y ajustes manuales se ejecutan exclusivamente vía RPC |
-| `abonos_cartera` | Cualquier autenticado | INSERT: cualquiera (mejor vía RPC `registrar_abono`) | — |
-| `gastos` | Solo `ADMIN` | Solo `ADMIN` | Un `VENDEDOR` ni siquiera debe ver este menú en la UI |
+| `abonos_cartera` | Cualquier autenticado | INSERT vía RPC `registrar_abono`; UPDATE vía RPC `editar_abono_cartera` (`ADMIN`) | — |
+| `gastos` | Solo `ADMIN` | Solo `ADMIN` (INSERT, UPDATE con verificación de concurrencia, DELETE) | Un `VENDEDOR` ni siquiera debe ver este menú en la UI |
 | `presupuestos` | Solo `ADMIN` | Solo `ADMIN` | — |
-| `documentos` | Cualquier autenticado | Solo `ADMIN` | — |
+| `documentos` | Cualquier autenticado | Solo `ADMIN` (vía Edge Function `/functions/v1/onedrive`) | Los documentos `FACTURA_DIAN` o vinculados a remisiones (`remision_id`) están protegidos contra eliminación |
 | `vista_alertas_stock` (vista) | Cualquier autenticado | No aplica (es de solo lectura) | Trae `semaforo`: `'ROJO'` / `'AMARILLO'` / `'VERDE'` ya calculado |
-
-**Ejemplo de lectura con filtro:**
-```javascript
-const { data, error } = await supabase
-  .from('vista_alertas_stock')
-  .select('*')
-  .eq('semaforo', 'ROJO');
-```
 
 ---
 
@@ -111,6 +95,23 @@ const { data: abonoId, error } = await supabase.rpc('registrar_abono', {
   p_remision_id: 'uuid-remision',   // opcional, puede omitirse
 });
 ```
+
+### `editar_abono_cartera`
+Permite a un administrador activo (`ADMIN`) corregir un abono previamente registrado (importe, método de pago, remisión a crédito vinculada y motivo de corrección) dentro de una transacción atómica con bloqueo pesimista (`FOR UPDATE`).
+
+```javascript
+const { data, error } = await supabase.rpc('editar_abono_cartera', {
+  p_abono_id: 'uuid-del-abono',
+  p_cliente_id: 'uuid-del-cliente',
+  p_monto: 75000,                   // Nuevo importe (> 0)
+  p_metodo_pago: 'BANCOLOMBIA',     // 'EFECTIVO' | 'TRANSFERENCIA' | 'BANCOLOMBIA'
+  p_remision_id: 'uuid-remision',   // Opcional (null para abono general)
+  p_motivo: 'Corrección por error de digitación en recibo', // Mínimo 5 caracteres
+  p_monto_anterior: 100000,         // Monto actual leído en pantalla (control de concurrencia)
+});
+```
+- Recalcula `clientes.saldo_cartera` (`saldo_actual + monto_anterior - nuevo_monto`) impidiendo que quede negativo.
+- Si el abono se vincula a una remisión a crédito, valida que la suma de abonos de esa remisión no supere su `total`.
 
 ### `resumen_financiero_mensual`
 ```javascript
@@ -158,7 +159,7 @@ const { data, error } = await supabase.rpc('registrar_movimiento_inventario', {
 ```
 
 - **Idempotencia:** Si se reintenta el envío con la misma clave `p_idempotency_key` para el mismo producto y tipo, la función retorna el mismo JSONB con `"repetido": true` sin duplicar el movimiento ni alterar el stock nuevamente.
-- **Ajustes:** En movimientos de tipo `'AJUSTE'`, `cantidad` en la respuesta y en `kardex` almacena la diferencia con signo (`p_cantidad - stock_anterior`), y el stock del producto pasa a ser exactamente la existencia contada (`p_cantidad`). Si `p_stock_esperado` difiere del stock bloqueado al momento de aplicar la transacción, se rechaza la operación para prevenir inconsistencias concurrentes.
+- **Ajustes:** En movimientos de tipo `'AJUSTE'`, `cantidad` en la respuesta y en `kardex` almacena la diferencia con signo (`p_cantidad - stock_anterior`), y el stock del producto pasa a ser exactamente la existencia contada (`p_cantidad`), incluyendo `0` cuando se verifica agotamiento físico o `diferencia = 0` cuando se deja constancia de auditoría física. Si `p_stock_esperado` difiere del stock bloqueado al momento de aplicar la transacción, se rechaza la operación para prevenir inconsistencias concurrentes.
 - **Errores esperables:**
   - `"Solo administradores activos pueden registrar movimientos de inventario."`
   - `"Tipo de movimiento inválido. Debe ser ENTRADA o AJUSTE."`
@@ -168,13 +169,22 @@ const { data, error } = await supabase.rpc('registrar_movimiento_inventario', {
   - `"La cantidad física contada para un AJUSTE no puede ser negativa."`
   - `"El stock esperado es obligatorio para un AJUSTE."`
   - `"El stock cambió desde que lo consultaste (ahora: X). Recuenta y vuelve a enviar."`
-  - `"La existencia contada coincide con el sistema; no hay nada que ajustar."`
   - `"No se puede registrar una entrada para un producto inactivo."`
   - `"La clave de idempotencia ya fue usada en otro movimiento."`
 
 ---
 
-## 5. Relaciones embebidas (evitar múltiples llamadas)
+## 5. Edge Function `/functions/v1/onedrive`
+
+Gestiona la conexión empresarial con Microsoft OneDrive, subida de documentos y PDFs de remisiones, descarga autenticada y eliminación segura:
+
+- `action: "status" | "list" | "references" | "start" | "complete" | "disconnect" | "recover" | "file" | "delete"`.
+- Subida `multipart/form-data` con `metadata` (`id, nombre, tipo_documento, cliente_id, remision_id, pdf_remision`) y binario `file`.
+- Eliminación (`action: "delete"`, `documento_id`): exclusivo para `ADMIN` activo. Rechaza la eliminación si el documento tiene `remision_id` asociado o es de tipo `'FACTURA_DIAN'`. Elimina primero el archivo en Microsoft Graph (aceptando `404` como ya inexistente) y luego elimina `onedrive_archivos` y `documentos`, evitando archivos huérfanos o referencias rotas.
+
+---
+
+## 6. Relaciones embebidas (evitar múltiples llamadas)
 
 PostgREST permite traer datos relacionados en una sola consulta usando el nombre de la tabla foránea, sin necesidad de un JOIN manual ni de una segunda llamada:
 
@@ -194,7 +204,7 @@ const { data } = await supabase
 
 ---
 
-## 6. Storage (imágenes de producto)
+## 7. Storage (imágenes de producto)
 
 El bucket `productos-imagenes` es privado — nunca se construye una URL pública a mano.
 
@@ -214,9 +224,10 @@ const { error } = await supabase.storage
 
 ---
 
-## 7. Resumen de lo que el frontend NO debe hacer
+## 8. Resumen de lo que el frontend NO debe hacer
 
-- No insertar directo en `detalles_remision` o `kardex` — siempre vía `crear_remision`.
+- No insertar directo en `detalles_remision` o `kardex` — siempre vía `crear_remision` o `registrar_movimiento_inventario`.
 - No calcular IVA, semáforo de stock, ni resolución de precio por cliente en el frontend — esos cálculos viven en el backend (triggers/RPC/vista) para que no haya dos fuentes de verdad.
 - No asumir que un array vacío significa "no hay datos" en tablas restringidas por rol — puede ser RLS bloqueando.
 - No construir URLs públicas para las imágenes de producto — siempre `createSignedUrl()`.
+- No exponer tokens OAuth de Microsoft OneDrive en el navegador — toda operación con Graph pasa por `/functions/v1/onedrive`.

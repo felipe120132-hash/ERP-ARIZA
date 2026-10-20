@@ -28,12 +28,15 @@ export default function DetalleRemisionPage() {
     [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const changingRemision = !remision || remision.id !== id;
+    if (changingRemision) {
+      setLoading(true);
+      setRemision(null);
+      setLines([]);
+      setClient("");
+    }
     setError(null);
     setWarning(null);
-    setRemision(null);
-    setLines([]);
-    setClient("");
     async function load() {
       try {
         if (!id || !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id)) {
@@ -150,6 +153,21 @@ export default function DetalleRemisionPage() {
                     : "No aplicado"}
                 </strong>
               </span>
+              {remision.pdf_url && (
+                <span>
+                  OneDrive:{" "}
+                  <strong>
+                    <a
+                      href={remision.pdf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ textDecoration: "underline" }}
+                    >
+                      PDF principal guardado
+                    </a>
+                  </strong>
+                </span>
+              )}
             </div>
             {warning && <p className="warning-box">{warning}</p>}
             <div className="order-table-wrap">
@@ -200,8 +218,9 @@ export default function DetalleRemisionPage() {
             </dl>
             <div className="receipt-footer">
               <p>
-                El PDF se genera con los datos consultados al descargarlo. El
-                envío a OneDrive se incorporará en una próxima entrega.
+                El PDF se genera con los datos vigentes de la remisión para
+                descarga, impresión o guardado directo en el OneDrive de la
+                empresa.
               </p>
               <Button asChild>
                 <Link to="/catalogo">

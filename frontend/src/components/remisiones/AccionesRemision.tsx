@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Printer, Ban } from "lucide-react";
+import { Download, Printer, Ban, CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -11,9 +11,26 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { remisionesService } from "@/services/remisionesService";
 import { cargarDocumentoRemision } from "@/services/documentoRemisionService";
-import type { Remision } from "@/types/schemas";
+import {
+  documentosEmpresaService,
+  solicitudDocumento,
+  validarDocumento,
+  type SolicitudDocumento,
+} from "@/services/documentosEmpresaService";
+import type { Documento, Remision } from "@/types/schemas";
 import { formatCOP } from "@/lib/cartera";
 import { Link } from "react-router-dom";
+
+function isUncertainUploadError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("no pudimos confirmar la operación") ||
+    normalized.includes("no se pudo confirmar la operación") ||
+    normalized.includes("no se confirmó la subida") ||
+    normalized.includes("conserva la solicitud")
+  );
+}
+
 export default function AccionesRemision({
   remision,
   onUpdated,
@@ -21,11 +38,158 @@ export default function AccionesRemision({
   remision: Remision;
   onUpdated: () => void;
 }) {
-  const { perfil } = useAuth();
+  const { user, perfil } = useAuth();
+  const isAdmin = perfil?.rol === "ADMIN";
+  const draftKey = user ? `documento:remision:${user.id}:${remision.id}` : "";
   const [busy, setBusy] = useState(false),
+    [savingOneDrive, setSavingOneDrive] = useState(false),
     [error, setError] = useState<string | null>(null),
+    [oneDriveSuccess, setOneDriveSuccess] = useState<string | null>(null),
+    [savedDoc, setSavedDoc] = useState<Documento | null>(null),
+    [pendingUpload, setPendingUpload] = useState<SolicitudDocumento | null>(
+      null,
+    ),
     [cancel, setCancel] = useState(false);
   const lock = useRef(false);
+
+  useEffect(() => {
+    if (!isAdmin || !draftKey) return;
+    let active = true;
+    solicitudDocumento(draftKey, "read")
+      .then((saved) => {
+        if (active && saved && saved.metadata.remision_id === remision.id) {
+          setPendingUpload(saved);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, draftKey, remision.id]);
+
+  async function finalizeOneDriveSuccess(doc: Documento) {
+    if (draftKey) {
+      await solicitudDocumento(draftKey, "delete").catch(() => {});
+    }
+    setPendingUpload(null);
+    setSavedDoc(doc);
+    setError(null);
+    setOneDriveSuccess(
+      `Documento «${doc.nombre}» guardado en OneDrive para la remisión #${remision.consecutivo}.`,
+    );
+    onUpdated();
+  }
+
+  async function guardarEnOneDrive(reintento?: SolicitudDocumento) {
+    if (lock.current || !isAdmin || !draftKey) return;
+    lock.current = true;
+    setBusy(true);
+    setSavingOneDrive(true);
+    setError(null);
+    setOneDriveSuccess(null);
+
+    let activeRequest: SolicitudDocumento | null =
+      reintento ?? pendingUpload ?? null;
+    try {
+      if (activeRequest) {
+        const recovered = await documentosEmpresaService.recuperar(
+          activeRequest.metadata.id,
+        );
+        if (recovered && recovered.remision_id === remision.id) {
+          await finalizeOneDriveSuccess(recovered);
+          return;
+        }
+      } else {
+        const [data, { generarRemisionPdf }] = await Promise.all([
+          cargarDocumentoRemision(remision.id),
+          import("@/lib/remisionPdf"),
+        ]);
+        if (data.remision.id !== remision.id) {
+          throw new Error(
+            "El identificador de la remisión consultada no coincide con la remisión seleccionada.",
+          );
+        }
+        const doc = await generarRemisionPdf(data);
+        const fileName = `remision-${data.remision.consecutivo}${data.remision.estado === "ANULADA" ? "-anulada" : ""}.pdf`;
+        const file = new File([doc.output("blob")], fileName, {
+          type: "application/pdf",
+        });
+        await validarDocumento(file);
+        activeRequest = {
+          key: draftKey,
+          file,
+          metadata: {
+            id: crypto.randomUUID(),
+            nombre: `Remisión #${data.remision.consecutivo}${data.remision.estado === "ANULADA" ? " (Anulada)" : ""}`,
+            tipo_documento: "OTRO",
+            cliente_id: data.remision.cliente_id,
+            remision_id: data.remision.id,
+            pdf_remision: true,
+          },
+        };
+        await solicitudDocumento(draftKey, "save", activeRequest);
+        setPendingUpload(activeRequest);
+      }
+
+      const uploaded = await documentosEmpresaService.subir(activeRequest);
+      if (
+        uploaded.remision_id !== remision.id ||
+        !uploaded.onedrive_url.startsWith("https://")
+      ) {
+        throw new Error(
+          "OneDrive no devolvió una confirmación válida para la remisión seleccionada.",
+        );
+      }
+      await finalizeOneDriveSuccess(uploaded);
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "No pudimos guardar el PDF de la remisión en OneDrive.";
+      setError(msg);
+      if (!isUncertainUploadError(msg)) {
+        if (draftKey) {
+          await solicitudDocumento(draftKey, "delete").catch(() => {});
+        }
+        setPendingUpload(null);
+      }
+    } finally {
+      lock.current = false;
+      setBusy(false);
+      setSavingOneDrive(false);
+    }
+  }
+
+  async function consultarPendienteOneDrive() {
+    if (lock.current || !pendingUpload) return;
+    lock.current = true;
+    setBusy(true);
+    setSavingOneDrive(true);
+    setError(null);
+    try {
+      const recovered = await documentosEmpresaService.recuperar(
+        pendingUpload.metadata.id,
+      );
+      if (recovered && recovered.remision_id === remision.id) {
+        await finalizeOneDriveSuccess(recovered);
+      } else {
+        setError(
+          "Todavía no figura confirmado en OneDrive. Puedes reintentar la misma subida sin duplicar el archivo.",
+        );
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No pudimos consultar el estado del documento en OneDrive.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+      setSavingOneDrive(false);
+    }
+  }
+
   async function pdf(print: boolean) {
     if (lock.current) return;
     lock.current = true;
@@ -68,14 +232,25 @@ export default function AccionesRemision({
   return (
     <>
       <div className="receipt-tools">
-        {perfil?.rol === "ADMIN" && <Button asChild variant="outline"><Link to={`/documentos?remision=${remision.id}`}>Guardar PDF en OneDrive</Link></Button>}
+        {isAdmin && (
+          <Button
+            variant="outline"
+            disabled={busy || cancel}
+            onClick={() => void guardarEnOneDrive()}
+          >
+            <CloudUpload size={16} />
+            {savingOneDrive
+              ? "Guardando en OneDrive…"
+              : "Guardar PDF en OneDrive"}
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={busy || cancel}
           onClick={() => void pdf(false)}
         >
           <Download size={16} />
-          {busy ? "Preparando PDF…" : "Descargar PDF"}
+          {busy && !savingOneDrive ? "Preparando PDF…" : "Descargar PDF"}
         </Button>
         <Button
           variant="outline"
@@ -85,7 +260,7 @@ export default function AccionesRemision({
           <Printer size={16} />
           Abrir PDF para imprimir
         </Button>
-        {perfil?.rol === "ADMIN" && remision.estado !== "ANULADA" && (
+        {isAdmin && remision.estado !== "ANULADA" && (
           <Button
             variant="destructive"
             disabled={busy}
@@ -96,9 +271,61 @@ export default function AccionesRemision({
           </Button>
         )}
       </div>
+      {oneDriveSuccess && (
+        <div className="order-success" role="status">
+          <span>{oneDriveSuccess}</span>
+          <Link to={`/documentos?remision=${remision.id}`}>
+            Ver en Documentos
+          </Link>
+          {(savedDoc?.onedrive_url ?? remision.pdf_url) && (
+            <a
+              href={savedDoc?.onedrive_url ?? remision.pdf_url ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Abrir en OneDrive
+            </a>
+          )}
+        </div>
+      )}
+      {pendingUpload && (
+        <div className="warning-box" role="status">
+          <h3>Subida pendiente de confirmar</h3>
+          <p>
+            {pendingUpload.metadata.nombre} · {pendingUpload.file.name}
+          </p>
+          <p>
+            Conservamos el archivo PDF original y su identificador para evitar
+            duplicados. Consulta el resultado o reintenta la misma subida.
+          </p>
+          <div className="receipt-tools">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void consultarPendienteOneDrive()}
+            >
+              Consultar resultado
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => void guardarEnOneDrive(pendingUpload)}
+            >
+              Reintentar misma subida
+            </Button>
+          </div>
+        </div>
+      )}
       {error && (
         <p className="error-box" role="alert">
-          {error}
+          {error}{" "}
+          {error.toLowerCase().includes("conectar el onedrive") && (
+            <Link
+              to="/documentos"
+              style={{ textDecoration: "underline", marginLeft: 8 }}
+            >
+              Ir a Documentos para conectar OneDrive
+            </Link>
+          )}
         </p>
       )}
       {cancel && (

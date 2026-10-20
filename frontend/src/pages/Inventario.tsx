@@ -6,6 +6,8 @@ import {
   CircleCheck,
   RefreshCw,
   ArrowUpRight,
+  Plus,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,9 +106,17 @@ export default function Inventario() {
         </div>
         <div className="receipt-tools">
           {perfil?.rol === "ADMIN" && (
-            <Button asChild variant="outline">
-              <Link to="/productos">Administrar productos</Link>
-            </Button>
+            <>
+              <Button asChild>
+                <Link to="/productos/nuevo">
+                  <Plus size={16} />
+                  Nuevo producto
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/productos">Administrar productos</Link>
+              </Button>
+            </>
           )}
           <Button
             variant="outline"
@@ -251,7 +261,7 @@ export default function Inventario() {
                     <th>Existencias</th>
                     <th>Mínimo</th>
                     <th>Estado</th>
-                    <th>Movimientos</th>
+                    <th>Kardex y acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -280,15 +290,38 @@ export default function Inventario() {
                         </span>
                       </td>
                       <td>
-                        <Button asChild variant="ghost" size="icon">
-                          <Link
-                            to={`/inventario/${x.id}`}
-                            aria-label={`Ver movimientos de ${x.nombre}`}
-                          >
-                            <ArrowUpRight size={18} />
-                          </Link>
-                        </Button>
-                        {perfil?.rol === "ADMIN" && x.activo && <Button asChild variant="outline" size="sm"><Link to={`/inventario/${x.id}/movimiento`} aria-label={`Modificar existencias de ${x.nombre}`}>Entrada / ajuste</Link></Button>}
+                        <div className="receipt-tools">
+                          <Button asChild variant="outline" size="sm">
+                            <Link
+                              to={`/inventario/${x.id}`}
+                              aria-label={`Ver movimientos de ${x.nombre}`}
+                            >
+                              <ArrowUpRight size={15} />
+                              Kardex
+                            </Link>
+                          </Button>
+                          {perfil?.rol === "ADMIN" && x.activo && (
+                            <Button asChild variant="outline" size="sm">
+                              <Link
+                                to={`/inventario/${x.id}/movimiento`}
+                                aria-label={`Modificar existencias de ${x.nombre}`}
+                              >
+                                Entrada / ajuste
+                              </Link>
+                            </Button>
+                          )}
+                          {perfil?.rol === "ADMIN" && (
+                            <Button asChild variant="ghost" size="sm">
+                              <Link
+                                to={`/productos/${x.id}/editar`}
+                                aria-label={`Editar ${x.nombre}`}
+                              >
+                                <Pencil size={14} />
+                                Editar
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

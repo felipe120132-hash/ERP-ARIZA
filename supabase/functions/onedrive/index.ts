@@ -97,7 +97,7 @@ export async function handleRequest(req: Request) {
     const form=isForm?await new Response(received,{headers:{"Content-Type":req.headers.get("Content-Type")!}}).formData():null;
     const body=form?{action:"upload"}:JSON.parse(new TextDecoder().decode(received));
     currentAction = typeof body?.action === "string" ? body.action : "unknown";
-    const admin=["start","complete","disconnect","upload","recover"].includes(body.action);
+    const admin=["start","complete","disconnect","upload","recover","delete"].includes(body.action);
     if(admin && profile.rol!=="ADMIN") throw new PublicError("Solo administradores activos pueden realizar esta operación.",403);
     const connection=()=>db!.from("onedrive_empresa").select("*").eq("id",true).single();
     if(body.action==="status") { const c=requireOk(await connection()); return json({connected:!!c.tokens_cifrados,account:profile.rol==="ADMIN"?c.cuenta:null}); }
@@ -178,6 +178,31 @@ export async function handleRequest(req: Request) {
       }
       const bytes=await limitedBody(response.body,maximum);
       return new Response(bytes,{headers:{...headers,"Content-Type":a.mime_type,"Content-Disposition":`attachment; filename="documento-${id}.${a.mime_type==="application/pdf"?"pdf":a.mime_type==="image/png"?"png":"jpg"}"`,"X-Content-Type-Options":"nosniff"}});
+    }
+    if(body.action==="delete") {
+      const id=uuid.parse(body.id);
+      const doc=requireOk(await db.from("documentos").select("*").eq("id",id).maybeSingle());
+      if(!doc) throw new PublicError("El documento ya no existe en el archivo.",404);
+      if(doc.remision_id || doc.tipo_documento==="FACTURA_DIAN") {
+        throw new PublicError("No se puede eliminar este documento porque está vinculado a una remisión o soporte fiscal histórico.",409);
+      }
+      const linkedRemision=requireOk(await db.from("remisiones").select("id").eq("pdf_url",doc.onedrive_url).limit(1));
+      if(Array.isArray(linkedRemision) && linkedRemision.length>0) {
+        throw new PublicError("No se puede eliminar este documento porque es el PDF asociado a una remisión registrada.",409);
+      }
+      const a=requireOk(await db.from("onedrive_archivos").select("*").eq("id",id).maybeSingle());
+      if(a && a.item_id) {
+        if(a.drive_id!==c.drive_id) throw new PublicError("El documento pertenece a otra conexión de OneDrive.",409);
+        const delResponse=await graph(tokens.access_token,`/drives/${encodeURIComponent(a.drive_id)}/items/${encodeURIComponent(a.item_id)}`,{method:"DELETE"});
+        if(!delResponse.ok && delResponse.status!==404) {
+          const errBody = await delResponse.json().catch(() => null);
+          logInternal(currentAction, errBody?.error?.code ?? String(delResponse.status), errBody?.error?.message ?? delResponse.statusText ?? "No se pudo eliminar el archivo en OneDrive");
+          throw new PublicError("No se pudo eliminar el archivo en OneDrive. El registro se conservó para evitar archivos huérfanos.",502);
+        }
+      }
+      if(a) requireOk(await db.from("onedrive_archivos").delete().eq("id",id));
+      requireOk(await db.from("documentos").delete().eq("id",id));
+      return json({deleted:true,id});
     }
     if(body.action!=="upload" || !form)throw new PublicError("Operación no reconocida.");
     const file=form.get("file");

@@ -1,5 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Wallet,
@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ArrowUpRight,
   Plus,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,9 +25,14 @@ export default function Cartera() {
     [attempt, setAttempt] = useState(0),
     [pay, setPay] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
+  const latestParams = useRef(new URLSearchParams(params));
+  useEffect(() => {
+    latestParams.current = new URLSearchParams(params);
+  }, [params]);
   const q = params.get("q") ?? "",
     estado = params.get("estado") ?? "todos",
-    tipo = params.get("tipo") ?? "todos";
+    tipo = params.get("tipo") ?? "todos",
+    actividad = params.get("actividad") ?? "todos";
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -56,6 +62,9 @@ export default function Cartera() {
         `${x.nombre_tienda} ${x.contacto ?? ""} ${x.telefono ?? ""}`,
       ).includes(normalize(q)) &&
       (tipo === "todos" || x.tipo_cliente === tipo) &&
+      (actividad === "todos" ||
+        (actividad === "activos" && x.activo) ||
+        (actividad === "inactivos" && !x.activo)) &&
       (estado === "todos" ||
         (estado === "saldo" && x.saldo_cartera > 0) ||
         (estado === "mora" && x.en_mora) ||
@@ -74,15 +83,11 @@ export default function Cartera() {
         .filter((x) => x.en_mora)
         .reduce((sum, x) => sum + Math.round(x.saldo_cartera * 100), 0) / 100;
   function change(key: string, value: string) {
-    setParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        value ? next.set(key, value) : next.delete(key);
-        if (key !== "pagina") next.delete("pagina");
-        return next;
-      },
-      { replace: true },
-    );
+    const next = new URLSearchParams(latestParams.current);
+    value ? next.set(key, value) : next.delete(key);
+    if (key !== "pagina") next.delete("pagina");
+    latestParams.current = next;
+    setParams(next, { replace: true });
   }
   return (
     <>
@@ -94,14 +99,24 @@ export default function Cartera() {
             Consulta saldos, revisa movimientos y registra los pagos recibidos.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setAttempt((x) => x + 1)}
-          disabled={loading}
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          Actualizar
-        </Button>
+        <div className="receipt-tools">
+          {perfil?.rol === "ADMIN" && (
+            <Button asChild>
+              <Link to="/cartera/nuevo">
+                <Plus size={16} />
+                Crear cliente
+              </Link>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setAttempt((x) => x + 1)}
+            disabled={loading}
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            Actualizar
+          </Button>
+        </div>
       </div>
       <div className="catalog-stats portfolio-stats">
         <div>
@@ -142,19 +157,12 @@ export default function Cartera() {
           <div>
             <h2>Cartera y clientes</h2>
             <p>
-              Incluye clientes inactivos con historial. La mora es la informada
-              por el sistema.
+              Incluye clientes activos e inactivos con historial. La mora es la
+              informada por el sistema.
             </p>
           </div>
         </div>
-        {perfil?.rol === "ADMIN" && (
-          <div className="client-create">
-            <Button asChild>
-              <Link to="/cartera/nuevo">Crear cliente</Link>
-            </Button>
-          </div>
-        )}
-        <div className="history-filters">
+        <div className="history-filters inventory-filters">
           <Input
             aria-label="Buscar cliente"
             placeholder="Nombre, contacto o teléfono…"
@@ -179,6 +187,15 @@ export default function Cartera() {
             <option value="todos">Todos los tipos</option>
             <option value="TIENDA">Tienda</option>
             <option value="DISTRIBUIDOR">Distribuidor</option>
+          </select>
+          <select
+            aria-label="Actividad del cliente"
+            value={actividad}
+            onChange={(e) => change("actividad", e.target.value)}
+          >
+            <option value="todos">Activos e inactivos</option>
+            <option value="activos">Solo activos</option>
+            <option value="inactivos">Solo inactivos</option>
           </select>
         </div>
         {loading ? (
@@ -247,16 +264,19 @@ export default function Cartera() {
                       </td>
                       <td>
                         <div className="client-actions">
-                          <Button asChild variant="ghost" size="icon">
+                          <Button asChild variant="outline" size="sm">
                             <Link
                               to={`/cartera/${x.id}`}
                               aria-label={`Ver historial de ${x.nombre_tienda}`}
+                              title={`Ver historial, remisiones y abonos de ${x.nombre_tienda}`}
                             >
-                              <ArrowUpRight size={18} />
+                              <ArrowUpRight size={15} />
+                              Historial
                             </Link>
                           </Button>
                           <Button
                             variant="outline"
+                            size="sm"
                             disabled={x.saldo_cartera <= 0}
                             aria-label={`Registrar abono a ${x.nombre_tienda}`}
                             onClick={() => setPay(x.id)}
@@ -264,6 +284,18 @@ export default function Cartera() {
                             <Plus size={15} />
                             Abonar
                           </Button>
+                          {perfil?.rol === "ADMIN" && (
+                            <Button asChild variant="ghost" size="sm">
+                              <Link
+                                to={`/cartera/${x.id}/administrar`}
+                                aria-label={`Administrar ${x.nombre_tienda}`}
+                                title={`Editar datos, estado y precios especiales de ${x.nombre_tienda}`}
+                              >
+                                <Pencil size={14} />
+                                Administrar
+                              </Link>
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ModulePending from "./ModulePending";
 import PresupuestoEditor from "@/components/PresupuestoEditor";
@@ -18,15 +18,19 @@ import { gastosService } from "@/services/gastosService";
 import { formatCOP } from "@/lib/cartera";
 import { normalize } from "@/lib/catalog";
 import type { Gasto, ResumenFinancieroResult } from "@/types/schemas";
+
 const validMonth = (v: string) => /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(v);
+
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
 export default function Finanzas() {
   const { perfil } = useAuth();
   return perfil?.rol === "ADMIN" ? <FinanzasAdmin /> : <ModulePending />;
 }
+
 function FinanzasAdmin() {
   const [budgetMonth, setBudgetMonth] = useState<string | null>(null);
   const { user } = useAuth();
@@ -39,11 +43,14 @@ function FinanzasAdmin() {
     [summaryError, setSummaryError] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
     [attempt, setAttempt] = useState(0),
-    [open, setOpen] = useState(false);
+    [open, setOpen] = useState(false),
+    [editingExpense, setEditingExpense] = useState<Gasto | null>(null),
+    [deletingExpense, setDeletingExpense] = useState<Gasto | null>(null);
   const [q, setQ] = useState(""),
     [category, setCategory] = useState(""),
     [recurring, setRecurring] = useState(""),
     [page, setPage] = useState(1);
+
   useEffect(() => {
     let live = true;
     setLoading(true);
@@ -75,6 +82,9 @@ function FinanzasAdmin() {
       live = false;
     };
   }, [month, attempt]);
+
+  const auditMap = gastosService.obtenerAuditoriaGastos();
+
   const filtered = rows.filter(
     (x) =>
       normalize(x.concepto).includes(normalize(q)) &&
@@ -83,6 +93,7 @@ function FinanzasAdmin() {
   );
   const pages = Math.max(1, Math.ceil(filtered.length / 15)),
     visiblePage = Math.min(page, pages);
+
   return (
     <>
       <div className="page-heading">
@@ -256,6 +267,7 @@ function FinanzasAdmin() {
                     <th>Tipo</th>
                     <th>Fecha de registro</th>
                     <th>Monto</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -265,11 +277,41 @@ function FinanzasAdmin() {
                       <tr key={x.id}>
                         <td>
                           <strong>{x.concepto}</strong>
+                          {auditMap[x.id] && (
+                            <div className="catalog-footnote">
+                              Editado (antes{" "}
+                              {formatCOP(auditMap[x.id].monto_anterior)})
+                            </div>
+                          )}
                         </td>
                         <td>{x.categoria}</td>
                         <td>{x.recurrente ? "Recurrente" : "Puntual"}</td>
                         <td>{x.created_at.toLocaleDateString("es-CO")}</td>
                         <td className="balance-cell">{formatCOP(x.monto)}</td>
+                        <td>
+                          <div className="order-actions">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Editar gasto ${x.concepto}`}
+                              onClick={() => setEditingExpense(x)}
+                            >
+                              <Pencil size={14} />
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Eliminar gasto ${x.concepto}`}
+                              onClick={() => setDeletingExpense(x)}
+                            >
+                              <Trash2 size={14} />
+                              Eliminar
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -313,6 +355,23 @@ function FinanzasAdmin() {
           onRecorded={() => setAttempt((x) => x + 1)}
         />
       )}
+      {editingExpense && user && (
+        <EditarGasto
+          key={`${user.id}:${editingExpense.id}`}
+          gasto={editingExpense}
+          userId={user.id}
+          onClose={() => setEditingExpense(null)}
+          onRecorded={() => setAttempt((x) => x + 1)}
+        />
+      )}
+      {deletingExpense && user && (
+        <EliminarGasto
+          key={`${user.id}:${deletingExpense.id}`}
+          gasto={deletingExpense}
+          onClose={() => setDeletingExpense(null)}
+          onRecorded={() => setAttempt((x) => x + 1)}
+        />
+      )}
       {budgetMonth && user && (
         <PresupuestoEditor
           key={`${user.id}:${budgetMonth}`}
@@ -325,6 +384,7 @@ function FinanzasAdmin() {
     </>
   );
 }
+
 function NuevoGasto({
   userId,
   month,
@@ -555,6 +615,395 @@ function NuevoGasto({
                 </Button>
               </fieldset>
             </form>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function EditarGasto({
+  gasto,
+  userId,
+  onClose,
+  onRecorded,
+}: {
+  gasto: Gasto;
+  userId: string;
+  onClose: () => void;
+  onRecorded: () => void;
+}) {
+  const initialPeriod = gasto.mes_referencia.slice(0, 7);
+  const key = `ariza:gasto-edicion-pendiente:${userId}:${gasto.id}`;
+  const [concept, setConcept] = useState(gasto.concepto),
+    [category, setCategory] = useState(gasto.categoria),
+    [amount, setAmount] = useState(String(gasto.monto)),
+    [period, setPeriod] = useState(initialPeriod),
+    [recurring, setRecurring] = useState(gasto.recurrente),
+    [review, setReview] = useState(false),
+    [busy, setBusy] = useState(false),
+    [success, setSuccess] = useState(false),
+    [error, setError] = useState<string | null>(null),
+    [checked, setChecked] = useState(false);
+  const [uncertain, setUncertain] = useState(() => {
+    try {
+      return sessionStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const lock = useRef(false);
+
+  const valid =
+    concept.trim().length > 0 &&
+    concept.trim().length <= 300 &&
+    category.trim().length > 0 &&
+    category.trim().length <= 100 &&
+    /^\d+(\.\d{1,2})?$/.test(amount) &&
+    Number(amount) > 0 &&
+    Number(amount) <= 9999999999.99 &&
+    Number.isSafeInteger(Math.round(Number(amount) * 100)) &&
+    validMonth(period);
+
+  const hasChanges =
+    concept.trim() !== gasto.concepto ||
+    category.trim() !== gasto.categoria ||
+    Number(amount) !== gasto.monto ||
+    period + "-01" !== gasto.mes_referencia ||
+    recurring !== gasto.recurrente;
+
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [busy]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid || !hasChanges || lock.current || uncertain || success) return;
+    if (!review) {
+      setReview(true);
+      setError(null);
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      sessionStorage.setItem(key, "1");
+    } catch {}
+    try {
+      const result = await gastosService.actualizarGasto(
+        gasto.id,
+        {
+          concepto: concept.trim(),
+          categoria: category.trim(),
+          monto: Number(amount),
+          mes_referencia: period + "-01",
+          recurrente: recurring,
+        },
+        gasto,
+      );
+      if (result.error || !result.data) {
+        const msg = result.error ?? "No recibimos confirmación del cambio.";
+        if (msg.includes("Error de conexión")) {
+          setUncertain(true);
+        } else {
+          try {
+            sessionStorage.removeItem(key);
+          } catch {}
+          setReview(false);
+        }
+        setError(msg);
+        return;
+      }
+      try {
+        sessionStorage.removeItem(key);
+      } catch {}
+      setSuccess(true);
+      onRecorded();
+    } catch {
+      setUncertain(true);
+      setError("No pudimos confirmar el resultado de la edición.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet
+      open
+      onOpenChange={(v) => {
+        if (!v && !lock.current) onClose();
+      }}
+    >
+      <SheetContent
+        className="abono-sheet"
+        showCloseButton={!busy}
+        onEscapeKeyDown={(e) => {
+          if (lock.current) e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          if (lock.current) e.preventDefault();
+        }}
+      >
+        <SheetHeader>
+          <SheetDescription>FINANZAS / EDITAR REGISTRO</SheetDescription>
+          <SheetTitle>Editar gasto</SheetTitle>
+        </SheetHeader>
+        <div className="abono-body">
+          {error && !uncertain && (
+            <p role="alert" className="error-box">
+              {error}
+            </p>
+          )}
+          {success ? (
+            <div className="empty-state" role="status">
+              <h2>Gasto actualizado</h2>
+              <p>
+                {concept} · {formatCOP(Number(amount))} · {period}
+              </p>
+              <p>Monto anterior: {formatCOP(gasto.monto)}</p>
+              <Button onClick={onClose}>Volver a finanzas</Button>
+            </div>
+          ) : uncertain ? (
+            <div className="warning-box" role="alert">
+              <h3>Revisa el historial antes de volver a guardar</h3>
+              <p>{error ?? "Hay una actualización anterior sin confirmar."}</p>
+              <p>
+                Comprueba si los cambios del gasto ya aparecen reflejados en la
+                tabla del mes.
+              </p>
+              <Button variant="outline" onClick={onClose}>
+                Consultar historial
+              </Button>
+              <label className="finance-check">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => setChecked(e.target.checked)}
+                />
+                Revisé el listado y confirmé que el cambio no se aplicó.
+              </label>
+              <Button
+                disabled={!checked}
+                onClick={() => {
+                  try {
+                    sessionStorage.removeItem(key);
+                  } catch {}
+                  setUncertain(false);
+                  setReview(false);
+                  setError(null);
+                }}
+              >
+                Habilitar nuevo intento
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={submit}>
+              <fieldset disabled={busy} className="finance-form">
+                {review ? (
+                  <div className="finance-review">
+                    <span className="eyebrow">REVISIÓN DE CAMBIOS</span>
+                    <h2>{concept}</h2>
+                    <p>Monto anterior: {formatCOP(gasto.monto)}</p>
+                    <strong>{formatCOP(Number(amount))}</strong>
+                    <p>
+                      {category} · {period} ·{" "}
+                      {recurring ? "Recurrente" : "Puntual"}
+                    </p>
+                    <p>
+                      Al confirmar se actualizará el gasto y se recalcularán el
+                      total gastado y el saldo disponible del presupuesto.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setReview(false)}
+                    >
+                      Editar datos
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Label htmlFor="edit-expense-concept">Concepto</Label>
+                    <Input
+                      id="edit-expense-concept"
+                      required
+                      maxLength={300}
+                      value={concept}
+                      onChange={(e) => setConcept(e.target.value)}
+                    />
+                    <Label htmlFor="edit-expense-category">Categoría</Label>
+                    <Input
+                      id="edit-expense-category"
+                      required
+                      maxLength={100}
+                      placeholder="Ej. Transporte, Servicios…"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                    />
+                    <Label htmlFor="edit-expense-amount">Monto (COP)</Label>
+                    <Input
+                      id="edit-expense-amount"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                    />
+                    <Label htmlFor="edit-expense-period">Mes del gasto</Label>
+                    <Input
+                      id="edit-expense-period"
+                      type="month"
+                      required
+                      value={period}
+                      onChange={(e) => setPeriod(e.target.value)}
+                    />
+                    <label className="finance-check">
+                      <input
+                        type="checkbox"
+                        checked={recurring}
+                        onChange={(e) => setRecurring(e.target.checked)}
+                      />
+                      Gasto recurrente
+                    </label>
+                    <p className="catalog-footnote">
+                      Valor registrado originalmente: {formatCOP(gasto.monto)} (
+                      {initialPeriod}).
+                    </p>
+                  </>
+                )}
+                <Button type="submit" disabled={!valid || !hasChanges || busy}>
+                  {busy
+                    ? "Guardando…"
+                    : review
+                      ? "Confirmar cambios"
+                      : "Revisar cambios"}
+                </Button>
+              </fieldset>
+            </form>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function EliminarGasto({
+  gasto,
+  onClose,
+  onRecorded,
+}: {
+  gasto: Gasto;
+  onClose: () => void;
+  onRecorded: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const lock = useRef(false);
+
+  async function confirmDelete() {
+    if (lock.current || deleted) return;
+    lock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await gastosService.eliminarGasto(gasto.id, gasto);
+      if (result.error || !result.data) {
+        setError(result.error ?? "No se pudo eliminar el gasto.");
+        return;
+      }
+      setDeleted(true);
+      onRecorded();
+    } catch {
+      setError("No pudimos confirmar la eliminación del gasto.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet
+      open
+      onOpenChange={(v) => {
+        if (!v && !lock.current) onClose();
+      }}
+    >
+      <SheetContent
+        className="abono-sheet"
+        showCloseButton={!busy}
+        onEscapeKeyDown={(e) => {
+          if (lock.current) e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          if (lock.current) e.preventDefault();
+        }}
+      >
+        <SheetHeader>
+          <SheetDescription>FINANZAS / ELIMINAR REGISTRO</SheetDescription>
+          <SheetTitle>Eliminar gasto</SheetTitle>
+        </SheetHeader>
+        <div className="abono-body">
+          {error && (
+            <p role="alert" className="error-box">
+              {error}
+            </p>
+          )}
+          {deleted ? (
+            <div className="empty-state" role="status">
+              <h2>Gasto eliminado</h2>
+              <p>
+                {gasto.concepto} · {formatCOP(gasto.monto)}
+              </p>
+              <p>
+                El monto fue descontado del total gastado y el saldo disponible
+                del presupuesto se actualizó.
+              </p>
+              <Button onClick={onClose}>Volver a finanzas</Button>
+            </div>
+          ) : (
+            <div className="finance-form">
+              <div className="finance-review">
+                <span className="eyebrow">CONFIRMACIÓN REQUERIDA</span>
+                <h2>{gasto.concepto}</h2>
+                <strong>{formatCOP(gasto.monto)}</strong>
+                <p>
+                  {gasto.categoria} · {gasto.mes_referencia.slice(0, 7)} ·{" "}
+                  {gasto.recurrente ? "Recurrente" : "Puntual"}
+                </p>
+                <p>
+                  ¿Confirmas la eliminación de este gasto? Se revertirá su
+                  importe del total gastado del mes y se recalculará el saldo
+                  disponible del presupuesto.
+                </p>
+              </div>
+              <div className="order-actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={onClose}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void confirmDelete()}
+                >
+                  {busy ? "Eliminando…" : "Confirmar eliminación"}
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </SheetContent>

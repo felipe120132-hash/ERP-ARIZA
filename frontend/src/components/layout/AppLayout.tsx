@@ -191,6 +191,15 @@ function LayoutContent() {
                   Accede a los módulos de tu operación.
                 </SheetDescription>
                 <Navigation onNavigate={() => setMobileOpen(false)} />
+                <Button
+                  variant="ghost"
+                  className="collapse-control"
+                  aria-label="Contraer menú"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <PanelLeftClose size={18} />
+                  <span>Contraer menú</span>
+                </Button>
               </SheetContent>
             </Sheet>
             <span>Mi espacio</span>

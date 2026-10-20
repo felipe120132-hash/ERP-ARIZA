@@ -252,3 +252,32 @@ test("administración adaptable a escritorio y móvil", async ({ page }) => {
     fullPage: true,
   });
 });
+
+test("evita clientes duplicados y protege eliminación cuando existen relaciones financieras", async ({
+  page,
+}) => {
+  const writes = await setup(page);
+  // 1. Intentar crear cliente duplicado ("mercado san jose" coincide con "Mercado San José")
+  await page.goto("/cartera/nuevo");
+  await page.getByLabel("Nombre de la tienda").fill("mercado san jose");
+  await page.getByRole("button", { name: "Revisar cliente" }).click();
+  await page.getByRole("button", { name: "Confirmar cliente" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Ya existe un cliente registrado",
+  );
+  expect(writes).toHaveLength(0);
+
+  // 2. Intentar eliminar cliente con saldo en cartera ($150.000,50) -> desactiva lógicamente (PATCH activo=false)
+  await page.route(`${api}/rest/v1/documentos*`, (r) =>
+    r.fulfill({ json: [], headers: { "content-range": "*/0", "access-control-expose-headers": "content-range" } }),
+  );
+  await page.goto(`/cartera/${cid}/administrar`);
+  await page.getByRole("button", { name: "Eliminar cliente" }).click();
+  await page.getByRole("button", { name: "Confirmar eliminación" }).click();
+  await expect(
+    page.getByText(/Se desactivó lógicamente para conservar sus registros/),
+  ).toBeVisible();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].method).toBe("PATCH");
+  expect(writes[0].body).toEqual({ activo: false });
+});
