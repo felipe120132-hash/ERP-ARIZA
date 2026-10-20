@@ -3276,3 +3276,172 @@ body {
 .document-file-picker{display:grid;gap:10px;background:#f2f9fd;border:1px dashed #9dc6e0;border-radius:14px;padding:18px;color:#166fae}.document-file-picker small{font-size:11px;overflow-wrap:anywhere}.document-file-picker input{font-size:11px;max-width:100%}
 @media(max-width:1100px){.document-layout{grid-template-columns:1fr}.document-uploader{max-width:100%;position:static;order:-1}}
 @media(max-width:600px){.document-connection{align-items:flex-start;flex-wrap:wrap;padding:20px}.document-cloud{display:none}.document-filters{flex-direction:column}.document-filters select{max-width:none}.document-row{flex-wrap:wrap;padding:18px}.document-row-actions{width:100%;justify-content:flex-start;margin-top:6px}.document-file-icon{width:38px;height:42px}.document-row-info{min-width:160px}}
+
+/* Remisiones responsive layout and 'Modificar' action button */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.app-shell,
+.workspace,
+.page-content,
+.catalog-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.remision-modify-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px !important;
+  font-weight: 600;
+  height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 9px !important;
+  color: #0b5389 !important;
+  background: #ecf6fe !important;
+  border: 1px solid #b5d8f2 !important;
+  white-space: nowrap;
+}
+.remision-modify-btn:hover {
+  background: #d8edfc !important;
+  color: #073a63 !important;
+  border-color: #8bc3ec !important;
+}
+.receipt-meta {
+  flex-wrap: wrap;
+}
+@media (max-width: 760px) {
+  .page-heading .order-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 10px;
+  }
+  .page-heading .order-actions > * {
+    flex: 1 1 135px;
+    justify-content: center;
+  }
+  .history-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 16px;
+  }
+  .history-filters input {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
+  .history-filters select {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .history-filters select:last-child {
+    grid-column: 1 / -1;
+  }
+  .remisiones-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    display: block;
+  }
+  .remisiones-table thead {
+    display: none;
+  }
+  .remisiones-table tbody {
+    display: grid;
+    gap: 12px;
+    padding: 4px 16px 16px;
+  }
+  .remisiones-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    padding: 15px 16px;
+    border: 1px solid #d9e8f4;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 4px 14px #1249760a;
+    align-items: center;
+  }
+  .remisiones-table tbody tr:hover td {
+    background: transparent;
+  }
+  .remisiones-table tbody td {
+    padding: 0 !important;
+    border: 0 !important;
+    min-width: 0;
+  }
+  .remisiones-table tbody td[data-label="Remisión"] {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 15px;
+    color: #0d3b61;
+  }
+  .remisiones-table tbody td[data-label="Estado"] {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .remisiones-table tbody td[data-label="Cliente"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: 14px;
+    font-weight: 600;
+    color: #143653;
+    overflow-wrap: anywhere;
+  }
+  .remisiones-table tbody td[data-label="Fecha"] {
+    grid-column: 1;
+    grid-row: 3;
+    font-size: 12px;
+    color: #526f86;
+  }
+  .remisiones-table tbody td[data-label="Fecha"]::before {
+    content: "Fecha: ";
+    color: #6c8499;
+  }
+  .remisiones-table tbody td[data-label="Pago"] {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
+    font-size: 12px;
+    font-weight: 500;
+    color: #365a75;
+  }
+  .remisiones-table tbody td[data-label="Pago"]::before {
+    content: "Pago: ";
+    font-weight: 400;
+    color: #6c8499;
+  }
+  .remisiones-table tbody td.remision-total-cell {
+    grid-column: 1;
+    grid-row: 4;
+    padding-top: 10px !important;
+    border-top: 1px solid #eaf1f7 !important;
+    font-size: 16px;
+    font-weight: 700;
+    color: #073c64;
+  }
+  .remisiones-table tbody td.remision-action-cell {
+    grid-column: 2;
+    grid-row: 4;
+    padding-top: 10px !important;
+    border-top: 1px solid #eaf1f7 !important;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .receipt-heading {
+    flex-wrap: wrap;
+  }
+  .receipt .receipt-tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .receipt .receipt-tools > * {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+}

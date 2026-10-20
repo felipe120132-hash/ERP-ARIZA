@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, ArrowUpRight } from "lucide-react";
+import { Plus, RefreshCw, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { remisionesService } from "@/services/remisionesService";
@@ -175,46 +175,57 @@ export default function Remisiones() {
         ) : (
           <>
             <div className="order-table-wrap">
-              <table className="order-table">
+              <table className="order-table remisiones-table">
                 <thead>
-                  <tr>
-                    <th>Remisión</th>
-                    <th>Cliente</th>
-                    <th>Fecha</th>
-                    <th>Pago</th>
-                    <th>Estado</th>
-                    <th>Total</th>
-                    <th>
-                      <span className="sr-only">Detalle</span>
-                    </th>
+                  <tr role="row">
+                    <th role="columnheader">Remisión</th>
+                    <th role="columnheader">Cliente</th>
+                    <th role="columnheader">Fecha</th>
+                    <th role="columnheader">Pago</th>
+                    <th role="columnheader">Estado</th>
+                    <th role="columnheader">Total</th>
+                    <th role="columnheader">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.slice((page - 1) * 15, page * 15).map((row) => (
-                    <tr key={row.id}>
-                      <td>
+                    <tr key={row.id} role="row">
+                      <td role="cell" data-label="Remisión">
                         <strong>#{row.consecutivo}</strong>
                       </td>
-                      <td>{names.get(row.cliente_id) ?? row.cliente_id}</td>
-                      <td>{row.fecha.toLocaleDateString("es-CO")}</td>
-                      <td>
+                      <td role="cell" data-label="Cliente">
+                        {names.get(row.cliente_id) ?? row.cliente_id}
+                      </td>
+                      <td role="cell" data-label="Fecha">
+                        {row.fecha.toLocaleDateString("es-CO")}
+                      </td>
+                      <td role="cell" data-label="Pago">
                         {row.tipo_pago === "CREDITO" ? "Crédito" : "Contado"}
                       </td>
-                      <td>
+                      <td role="cell" data-label="Estado">
                         <span
                           className={`remision-status ${row.estado.toLowerCase()}`}
                         >
                           {row.estado}
                         </span>
                       </td>
-                      <td>{money(row.total)}</td>
-                      <td>
-                        <Button asChild variant="ghost" size="icon">
+                      <td role="cell" data-label="Total" className="remision-total-cell">
+                        {money(row.total)}
+                      </td>
+                      <td role="cell" data-label="Acción" className="remision-action-cell">
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="remision-modify-btn"
+                        >
                           <Link
-                            aria-label={`Ver remisión ${row.consecutivo}`}
+                            aria-label={`Modificar remisión ${row.consecutivo} · Ver remisión ${row.consecutivo}`}
+                            title={`Modificar remisión #${row.consecutivo}`}
                             to={`/remisiones/${row.id}`}
                           >
-                            <ArrowUpRight size={18} />
+                            <Pencil size={14} />
+                            Modificar
                           </Link>
                         </Button>
                       </td>
