@@ -245,7 +245,7 @@ function Listado() {
                       </td>
                       <td>
                         {confirmDeleteId === p.id ? (
-                          <div className="receipt-tools">
+                          <div className="receipt-tools table-action-group">
                             <Button
                               type="button"
                               size="sm"
@@ -265,7 +265,7 @@ function Listado() {
                             </Button>
                           </div>
                         ) : (
-                          <div className="receipt-tools">
+                          <div className="receipt-tools table-action-group">
                             <Button asChild variant="outline" size="sm">
                               <Link
                                 to={`/productos/${p.id}/editar`}
@@ -275,7 +275,7 @@ function Listado() {
                                 Editar
                               </Link>
                             </Button>
-                            <Button asChild variant="ghost" size="sm">
+                            <Button asChild variant="outline" size="sm">
                               <Link
                                 to={`/inventario/${p.id}`}
                                 aria-label={`Ver kardex de ${p.nombre}`}
@@ -286,7 +286,7 @@ function Listado() {
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
                               disabled={busyId === p.id}
                               aria-label={`${p.activo ? "Desactivar" : "Activar"} ${p.nombre}`}
@@ -297,8 +297,9 @@ function Listado() {
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
+                              className="table-action-danger"
                               disabled={busyId === p.id}
                               aria-label={`Eliminar ${p.nombre}`}
                               onClick={() => setConfirmDeleteId(p.id)}

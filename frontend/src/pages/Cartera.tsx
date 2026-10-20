@@ -285,7 +285,7 @@ export default function Cartera() {
                             Abonar
                           </Button>
                           {perfil?.rol === "ADMIN" && (
-                            <Button asChild variant="ghost" size="sm">
+                            <Button asChild variant="outline" size="sm">
                               <Link
                                 to={`/cartera/${x.id}/administrar`}
                                 aria-label={`Administrar ${x.nombre_tienda}`}

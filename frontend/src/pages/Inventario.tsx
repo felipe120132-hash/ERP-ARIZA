@@ -311,7 +311,7 @@ export default function Inventario() {
                             </Button>
                           )}
                           {perfil?.rol === "ADMIN" && (
-                            <Button asChild variant="ghost" size="sm">
+                            <Button asChild variant="outline" size="sm">
                               <Link
                                 to={`/productos/${x.id}/editar`}
                                 aria-label={`Editar ${x.nombre}`}
