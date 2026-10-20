@@ -402,7 +402,6 @@ export default function Catalogo() {
                       </div>
                       <Button
                         className="add-to-order"
-                        variant="secondary"
                         disabled={
                           product.stock_actual <= 0 ||
                           pedido.enviando ||

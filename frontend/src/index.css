@@ -1380,7 +1380,26 @@ svg {
 .add-to-order {
   width: 100%;
   margin-top: 14px;
-  font-size: 11px !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  background: linear-gradient(100deg, #0067b9, #087bd9) !important;
+  color: #ffffff !important;
+  border: 1px solid #045fa8 !important;
+  box-shadow: 0 4px 12px #0067b924;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.12s ease;
+}
+.add-to-order:hover:not(:disabled) {
+  background: linear-gradient(100deg, #00589e, #006fc9) !important;
+  box-shadow: 0 6px 16px #00589e33;
+}
+.add-to-order:disabled {
+  background: #dce7f1 !important;
+  color: #6b8296 !important;
+  border-color: #cbdbe8 !important;
+  box-shadow: none;
 }
 .order-cart {
   position: sticky;
