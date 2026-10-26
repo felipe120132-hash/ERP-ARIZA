@@ -1,16 +1,23 @@
 import 'dotenv/config';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../src/services/supabaseClient';
 import { productosService } from '../src/services/productosService';
 import { remisionesService } from '../src/services/remisionesService';
 import { carteraService } from '../src/services/carteraService';
 import { inventarioService } from '../src/services/inventarioService';
 
-// ─── Helpers de consola ──────────────────────────────────────────────────────
+// ─── Contadores y Helpers de consola ──────────────────────────────────────────
 
 const PASS = '✅';
 const FAIL = '❌';
+const WARN = '⚠';
 const INFO = '  ℹ';
+
+let totalVerificaciones = 0;
+let verificacionesAprobadas = 0;
+let verificacionesFallidas = 0;
+let verificacionesOmitidas = 0;
 
 function titulo(texto: string) {
   console.log('\n' + '─'.repeat(66));
@@ -19,15 +26,30 @@ function titulo(texto: string) {
 }
 
 function ok(texto: string, extra?: unknown) {
+  totalVerificaciones++;
+  verificacionesAprobadas++;
   console.log(`${PASS} ${texto}`);
   if (extra !== undefined) {
     console.log(`${INFO}`, typeof extra === 'object' ? JSON.stringify(extra, null, 2) : extra);
   }
 }
 
-function fail(texto: string, error: string | null) {
+function fail(texto: string, error: unknown) {
+  totalVerificaciones++;
+  verificacionesFallidas++;
   console.log(`${FAIL} ${texto}`);
-  if (error) console.log(`${INFO} Error: ${error}`);
+  if (error !== undefined && error !== null) {
+    console.log(`${INFO} Error:`, error);
+  }
+}
+
+function omit(texto: string, motivo?: string) {
+  totalVerificaciones++;
+  verificacionesOmitidas++;
+  console.log(`${WARN} ${texto}`);
+  if (motivo) {
+    console.log(`${INFO} Motivo: ${motivo}`);
+  }
 }
 
 // ─── Autenticación ──────────────────────────────────────────────────────────
@@ -35,8 +57,12 @@ function fail(texto: string, error: string | null) {
 async function autenticar(): Promise<boolean> {
   titulo('PASO 0 — Autenticación');
 
-  const email = process.env.TEST_USER_EMAIL || (import.meta.env as Record<string, string | undefined>).TEST_USER_EMAIL;
-  const password = process.env.TEST_USER_PASSWORD || (import.meta.env as Record<string, string | undefined>).TEST_USER_PASSWORD;
+  const email =
+    process.env.TEST_USER_EMAIL ||
+    (import.meta.env as Record<string, string | undefined>)?.TEST_USER_EMAIL;
+  const password =
+    process.env.TEST_USER_PASSWORD ||
+    (import.meta.env as Record<string, string | undefined>)?.TEST_USER_PASSWORD;
 
   if (!email || !password) {
     fail('Variables TEST_USER_EMAIL / TEST_USER_PASSWORD no configuradas en .env', null);
@@ -90,9 +116,9 @@ async function probarServicios() {
     if (error || !data) {
       fail('listarAlertasStock falló', error);
     } else {
-      const rojos = data.filter(a => a.semaforo === 'ROJO').length;
-      const amarillos = data.filter(a => a.semaforo === 'AMARILLO').length;
-      const verdes = data.filter(a => a.semaforo === 'VERDE').length;
+      const rojos = data.filter((a) => a.semaforo === 'ROJO').length;
+      const amarillos = data.filter((a) => a.semaforo === 'AMARILLO').length;
+      const verdes = data.filter((a) => a.semaforo === 'VERDE').length;
       ok(`${data.length} alertas — 🔴 ${rojos} ROJO | 🟡 ${amarillos} AMARILLO | 🟢 ${verdes} VERDE`);
     }
   }
@@ -100,7 +126,11 @@ async function probarServicios() {
   // ── PASO 3: obtener cliente para usar en los pasos siguientes ─────────────
   titulo('PASO 3 — Obtener cliente y producto de la base');
   {
-    const { data, error } = await supabase.from('clientes').select('id, nombre_tienda').limit(1).single();
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('id, nombre_tienda')
+      .limit(1)
+      .single();
     if (error || !data) {
       fail('No se pudo obtener un cliente de la base', error?.message ?? null);
     } else {
@@ -153,6 +183,64 @@ async function probarServicios() {
     }
   }
 
+  // ── PASO 5b: Endurecimiento RPC actualizar_pdf_remision (Llamada directa ADMIN) ──
+  titulo('PASO 5b — Endurecimiento RPC actualizar_pdf_remision (Llamada directa ADMIN)');
+  if (!nuevaRemisionId) {
+    fail('Saltando: no se creó remisión de prueba para probar actualizar_pdf_remision', null);
+  } else {
+    // 1. URL con esquema javascript:alert(1) (debe ser rechazada)
+    const { error: errJs } = await supabase.rpc('actualizar_pdf_remision', {
+      p_remision_id: nuevaRemisionId,
+      p_pdf_url: 'javascript:alert(1)',
+    });
+    if (
+      errJs &&
+      (errJs.message.includes('debe empezar por https://') ||
+        errJs.message.includes('no es válida'))
+    ) {
+      ok(`URL 'javascript:alert(1)' rechazada correctamente: "${errJs.message}"`);
+    } else if (!errJs) {
+      fail("URL 'javascript:alert(1)' debió ser rechazada pero fue aceptada", null);
+    } else {
+      ok(`URL 'javascript:alert(1)' rechazada: "${errJs.message}"`);
+    }
+
+    // 2. URL con protocolo http no seguro (debe ser rechazada)
+    const { error: errHttp } = await supabase.rpc('actualizar_pdf_remision', {
+      p_remision_id: nuevaRemisionId,
+      p_pdf_url: 'http://inseguro.example.com/a.pdf',
+    });
+    if (
+      errHttp &&
+      (errHttp.message.includes('debe empezar por https://') ||
+        errHttp.message.includes('no es válida'))
+    ) {
+      ok(`URL 'http://inseguro.example.com/a.pdf' rechazada correctamente: "${errHttp.message}"`);
+    } else if (!errHttp) {
+      fail("URL 'http://inseguro.example.com/a.pdf' debió ser rechazada pero fue aceptada", null);
+    } else {
+      ok(`URL 'http://inseguro.example.com/a.pdf' rechazada: "${errHttp.message}"`);
+    }
+
+    // 3. URL de más de 2048 caracteres (debe ser rechazada)
+    const urlLarga = 'https://onedrive.example.com/ariza-erp/' + 'x'.repeat(2050);
+    const { error: errLarga } = await supabase.rpc('actualizar_pdf_remision', {
+      p_remision_id: nuevaRemisionId,
+      p_pdf_url: urlLarga,
+    });
+    if (
+      errLarga &&
+      (errLarga.message.includes('debe empezar por https://') ||
+        errLarga.message.includes('no es válida'))
+    ) {
+      ok(`URL de más de 2048 caracteres rechazada correctamente: "${errLarga.message}"`);
+    } else if (!errLarga) {
+      fail('URL de más de 2048 caracteres debió ser rechazada pero fue aceptada', null);
+    } else {
+      ok(`URL de más de 2048 caracteres rechazada: "${errLarga.message}"`);
+    }
+  }
+
   // ── PASO 6: listarRemisiones — confirmar pdf_url actualizada ─────────────
   titulo('PASO 6 — listarRemisiones() (confirmar pdf_url actualizada)');
   {
@@ -162,7 +250,7 @@ async function probarServicios() {
     } else {
       ok(`${data.length} remisión(es) PENDIENTE encontrada(s)`);
       if (nuevaRemisionId) {
-        const encontrada = data.find(r => r.id === nuevaRemisionId);
+        const encontrada = data.find((r) => r.id === nuevaRemisionId);
         if (encontrada) {
           ok(`Remisión de prueba encontrada — consecutivo #${encontrada.consecutivo}, total=${encontrada.total}`);
           if (encontrada.pdf_url === PDF_URL_PRUEBA) {
@@ -213,8 +301,8 @@ async function probarServicios() {
 
   // ── PASO 9: inventarioService — registrarMovimiento() y listarKardexProducto() ──
   titulo('PASO 9 — inventarioService: Entradas, Ajustes e Idempotencia (ADMIN)');
+  let productoInventarioId: string | undefined;
   {
-    let productoInventarioId: string | undefined;
     let stockBase: number = 0;
 
     // Buscar primero el producto de prueba SKU-PRUEBA (database/datos_prueba_inventario.sql)
@@ -264,7 +352,7 @@ async function probarServicios() {
         if (errKardex || !kardexRows) {
           fail('Error al listar kardex del producto', errKardex);
         } else {
-          const mov = kardexRows.find(k => k.idempotency_key === idempotencyKeyEntrada);
+          const mov = kardexRows.find((k) => k.idempotency_key === idempotencyKeyEntrada);
           if (mov && mov.tipo_movimiento === 'ENTRADA' && Number(mov.cantidad) === 10) {
             ok(`Kardex verificado: fila de entrada con cantidad=+10, stock_resultante=${mov.stock_resultante} e idempotency_key coincidente`);
           } else {
@@ -298,7 +386,7 @@ async function probarServicios() {
 
       // 9.3 Ajuste correcto
       const stockAntesAjuste = stockBase + 10;
-      const nuevoConteoFisico = stockAntesAjuste + 5; // e.g., si era 10 ahora es 15
+      const nuevoConteoFisico = stockAntesAjuste + 5;
       const idempotencyKeyAjuste = crypto.randomUUID();
 
       const { data: resAjuste, error: errAjuste } = await inventarioService.registrarMovimiento({
@@ -378,56 +466,228 @@ async function probarServicios() {
       } else {
         fail('Movimiento para producto inexistente debió ser rechazado', null);
       }
+    }
+  }
 
-      // ── PASO 10: Control de roles — VENDEDOR no puede registrar movimientos ──
-      titulo('PASO 10 — Control de acceso: VENDEDOR no puede registrar movimientos');
-      const vendEmail = process.env.TEST_VENDEDOR_EMAIL || (import.meta.env as Record<string, string | undefined>).TEST_VENDEDOR_EMAIL;
-      const vendPass = process.env.TEST_VENDEDOR_PASSWORD || (import.meta.env as Record<string, string | undefined>).TEST_VENDEDOR_PASSWORD;
+  // ── PASO 10: Control de roles y aislamiento VENDEDOR (Segundo cliente) ────
+  titulo('PASO 10 — Control de acceso y aislamiento de permisos (VENDEDOR)');
+  const vendEmail =
+    process.env.TEST_VENDEDOR_EMAIL ||
+    (import.meta.env as Record<string, string | undefined>)?.TEST_VENDEDOR_EMAIL;
+  const vendPass =
+    process.env.TEST_VENDEDOR_PASSWORD ||
+    (import.meta.env as Record<string, string | undefined>)?.TEST_VENDEDOR_PASSWORD;
 
-      if (vendEmail && vendPass) {
-        const { error: errLoginVend } = await supabase.auth.signInWithPassword({
-          email: vendEmail,
-          password: vendPass,
-        });
+  if (vendEmail && vendPass) {
+    const supabaseUrl =
+      process.env.VITE_SUPABASE_URL ||
+      (import.meta.env as Record<string, string | undefined>)?.VITE_SUPABASE_URL ||
+      '';
+    const supabaseAnonKey =
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      (import.meta.env as Record<string, string | undefined>)?.VITE_SUPABASE_ANON_KEY ||
+      '';
 
-        if (errLoginVend) {
-          fail('No se pudo autenticar usuario VENDEDOR de prueba', errLoginVend.message);
-        } else {
-          ok(`Autenticado como VENDEDOR: ${vendEmail}`);
-          const { data: resVend, error: errVend } = await inventarioService.registrarMovimiento({
+    const supabaseVendedor = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: authVend, error: errLoginVend } =
+      await supabaseVendedor.auth.signInWithPassword({
+        email: vendEmail,
+        password: vendPass,
+      });
+
+    if (errLoginVend || !authVend.user) {
+      fail('No se pudo autenticar usuario VENDEDOR de prueba con el segundo cliente', errLoginVend?.message ?? null);
+    } else {
+      ok(`Segundo cliente Supabase autenticado como VENDEDOR: ${vendEmail}`);
+
+      // 10.1 VENDEDOR no puede registrar_movimiento_inventario (debe fallar)
+      if (productoInventarioId) {
+        const { data: resMovVend, error: errMovVend } = await supabaseVendedor.rpc(
+          'registrar_movimiento_inventario',
+          {
             p_producto_id: productoInventarioId,
             p_tipo: 'ENTRADA',
             p_cantidad: 1,
             p_motivo: 'Intento de entrada como vendedor',
             p_idempotency_key: crypto.randomUUID(),
-          });
+          },
+        );
 
-          if (errVend && (errVend.includes('Solo administradores activos') || errVend.includes('permisos'))) {
-            ok(`Movimiento rechazado a VENDEDOR correctamente: "${errVend}"`);
-          } else if (!errVend) {
-            fail('VENDEDOR pudo registrar movimiento indebidamente', JSON.stringify(resVend));
-          } else {
-            ok(`Movimiento falló para VENDEDOR como se esperaba: "${errVend}"`);
-          }
-
-          // Restaurar sesión de ADMIN para pasos posteriores
-          await autenticar();
+        if (
+          errMovVend &&
+          (errMovVend.message.includes('Solo administradores activos') ||
+            errMovVend.message.includes('permisos') ||
+            errMovVend.code === '42501' ||
+            errMovVend.code === 'P0001')
+        ) {
+          ok(`registrar_movimiento_inventario rechazado a VENDEDOR correctamente: "${errMovVend.message}"`);
+        } else if (!errMovVend) {
+          fail('VENDEDOR pudo registrar movimiento indebidamente', JSON.stringify(resMovVend));
+        } else {
+          ok(`registrar_movimiento_inventario falló para VENDEDOR como se esperaba: "${errMovVend.message}"`);
         }
       } else {
-        console.log(`${INFO} TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env; prueba de login VENDEDOR omitida.`);
-        console.log(`${INFO} Guard en BD verificado por definición: IF NOT es_admin_activo() THEN RAISE EXCEPTION.`);
+        omit('VENDEDOR no puede registrar_movimiento_inventario', 'Falta producto de inventario');
+      }
+
+      // 10.2 VENDEDOR no puede anular_remision de remisión PENDIENTE creada por ADMIN
+      if (primerClienteId && primerProductoId) {
+        const { data: remAdminId, error: errCrearAdmin } = await remisionesService.crearRemision({
+          p_cliente_id: primerClienteId,
+          p_tipo_pago: 'CONTADO',
+          p_items: [{ producto_id: primerProductoId, cantidad: 1 }],
+          p_aplica_iva: false,
+        });
+
+        if (errCrearAdmin || !remAdminId) {
+          fail('No se pudo crear remisión temporal de ADMIN para prueba de anulación', errCrearAdmin);
+        } else {
+          const { error: errAnularVend } = await supabaseVendedor.rpc('anular_remision', {
+            p_remision_id: remAdminId,
+          });
+
+          if (
+            errAnularVend &&
+            (errAnularVend.message.includes('Solo administradores activos') ||
+              errAnularVend.message.includes('permisos') ||
+              errAnularVend.code === '42501' ||
+              errAnularVend.code === 'P0001')
+          ) {
+            ok(`anular_remision rechazada a VENDEDOR correctamente: "${errAnularVend.message}"`);
+          } else if (!errAnularVend) {
+            fail('VENDEDOR pudo anular una remisión indebidamente', null);
+          } else {
+            ok(`anular_remision falló para VENDEDOR como se esperaba: "${errAnularVend.message}"`);
+          }
+
+          // ADMIN anula la remisión para no dejar basura
+          const { error: errLimpiarAdmin } = await remisionesService.anularRemision(remAdminId);
+          if (errLimpiarAdmin) {
+            fail('ADMIN no pudo anular la remisión temporal tras prueba', errLimpiarAdmin);
+          } else {
+            ok(`ADMIN anuló la remisión temporal (${remAdminId}) para no dejar basura`);
+          }
+        }
+      } else {
+        omit('VENDEDOR no puede anular_remision', 'Falta cliente o producto');
+      }
+
+      // 10.3 VENDEDOR no ve filas en gastos ([]) ni en presupuestos ([])
+      const { data: gastosVend, error: errGastosVend } = await supabaseVendedor
+        .from('gastos')
+        .select('*');
+      if (!errGastosVend && Array.isArray(gastosVend) && gastosVend.length === 0) {
+        ok('VENDEDOR no ve filas en gastos (devuelve [])');
+      } else if (errGastosVend) {
+        ok(`Acceso a gastos restringido para VENDEDOR: "${errGastosVend.message}"`);
+      } else {
+        fail(`VENDEDOR vio filas en gastos indebidamente (${gastosVend?.length} filas)`, null);
+      }
+
+      const { data: presupuestosVend, error: errPresupuestosVend } = await supabaseVendedor
+        .from('presupuestos')
+        .select('*');
+      if (!errPresupuestosVend && Array.isArray(presupuestosVend) && presupuestosVend.length === 0) {
+        ok('VENDEDOR no ve filas en presupuestos (devuelve [])');
+      } else if (errPresupuestosVend) {
+        ok(`Acceso a presupuestos restringido para VENDEDOR: "${errPresupuestosVend.message}"`);
+      } else {
+        fail(`VENDEDOR vio filas en presupuestos indebidamente (${presupuestosVend?.length} filas)`, null);
+      }
+
+      // 10.4 VENDEDOR SÍ puede crear remisión y actualizar_pdf_remision con URL https válida
+      if (primerClienteId && primerProductoId) {
+        const { data: remVendId, error: errCrearRemVend } = await supabaseVendedor.rpc(
+          'crear_remision',
+          {
+            p_cliente_id: primerClienteId,
+            p_tipo_pago: 'CONTADO',
+            p_items: [{ producto_id: primerProductoId, cantidad: 1 }],
+            p_aplica_iva: false,
+          },
+        );
+
+        if (errCrearRemVend || !remVendId) {
+          fail('VENDEDOR activo debió poder crear remisión legítima pero falló', errCrearRemVend?.message ?? null);
+        } else {
+          ok(`VENDEDOR creó remisión legítimamente — ID: ${remVendId}`);
+
+          const urlHttpsValida = 'https://onedrive.example.com/ariza-erp/vendedor-valido.pdf';
+          const { error: errPdfVend } = await supabaseVendedor.rpc('actualizar_pdf_remision', {
+            p_remision_id: remVendId,
+            p_pdf_url: urlHttpsValida,
+          });
+
+          if (errPdfVend) {
+            fail('VENDEDOR activo debió poder actualizar pdf_url con HTTPS válida pero falló', errPdfVend.message);
+          } else {
+            ok('VENDEDOR actualizó pdf_url con HTTPS válida exitosamente');
+          }
+
+          // ADMIN anula la remisión para no dejar basura
+          const { error: errLimpiarVend } = await remisionesService.anularRemision(remVendId);
+          if (errLimpiarVend) {
+            fail('ADMIN no pudo anular la remisión de prueba creada por VENDEDOR', errLimpiarVend);
+          } else {
+            ok(`ADMIN anuló la remisión (${remVendId}) creada por VENDEDOR para no dejar basura`);
+          }
+        }
+      } else {
+        omit('VENDEDOR crear remisión y actualizar pdf', 'Falta cliente o producto');
+      }
+
+      // 10.5 VENDEDOR no puede leer onedrive_oauth ni onedrive_empresa (debe devolver error o [])
+      const { data: oauthData, error: oauthErr } = await supabaseVendedor
+        .from('onedrive_oauth')
+        .select('*');
+      if (oauthErr || (Array.isArray(oauthData) && oauthData.length === 0)) {
+        ok(`Lectura de onedrive_oauth bloqueada para VENDEDOR ${oauthErr ? `(Error: ${oauthErr.message})` : '(Devolvió [])'}`);
+      } else {
+        fail(`VENDEDOR pudo leer onedrive_oauth indebidamente (${oauthData?.length} filas)`, null);
+      }
+
+      const { data: empresaData, error: empresaErr } = await supabaseVendedor
+        .from('onedrive_empresa')
+        .select('*');
+      if (empresaErr || (Array.isArray(empresaData) && empresaData.length === 0)) {
+        ok(`Lectura de onedrive_empresa bloqueada para VENDEDOR ${empresaErr ? `(Error: ${empresaErr.message})` : '(Devolvió [])'}`);
+      } else {
+        fail(`VENDEDOR pudo leer onedrive_empresa indebidamente (${empresaData?.length} filas)`, null);
       }
     }
+  } else {
+    console.log(`${WARN} TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env; pruebas de VENDEDOR omitidas.`);
+    omit('VENDEDOR no puede registrar_movimiento_inventario', 'TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env');
+    omit('VENDEDOR no puede anular_remision de remisión PENDIENTE', 'TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env');
+    omit('VENDEDOR no ve filas en gastos ([]) ni en presupuestos ([])', 'TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env');
+    omit('VENDEDOR SÍ puede crear remisión y actualizar_pdf_remision con HTTPS', 'TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env');
+    omit('VENDEDOR no puede leer onedrive_oauth ni onedrive_empresa', 'TEST_VENDEDOR_EMAIL / TEST_VENDEDOR_PASSWORD no configuradas en .env');
+    console.log(`${INFO} Guard en BD verificado por definición: IF NOT es_admin_activo() THEN RAISE EXCEPTION.`);
   }
 
   // ── Resumen ──────────────────────────────────────────────────────────────
   console.log('\n' + '='.repeat(66));
-  console.log('  ✔  Prueba de servicios finalizada.');
-  console.log('='.repeat(66) + '\n');
+  console.log('  📊 RESUMEN FINAL DE PRUEBAS DE SERVICIOS');
+  console.log('='.repeat(66));
+  console.log(`  Total de verificaciones : ${totalVerificaciones}`);
+  console.log(`  Aprobadas (✅)           : ${verificacionesAprobadas}`);
+  console.log(`  Fallidas  (❌)           : ${verificacionesFallidas}`);
+  console.log(`  Omitidas  (⚠)            : ${verificacionesOmitidas}`);
+  console.log('='.repeat(66));
+
+  if (verificacionesFallidas > 0) {
+    console.error(`\n💥 Se encontraron ${verificacionesFallidas} verificación(es) fallida(s).`);
+    process.exit(1);
+  } else {
+    console.log('\n✨ Todas las verificaciones ejecutadas fueron aprobadas exitosamente.');
+    process.exit(0);
+  }
 }
 
-probarServicios().catch(err => {
+probarServicios().catch((err) => {
   console.error('\n💥 Error fatal en probar-servicios:', err);
   process.exit(1);
 });
-

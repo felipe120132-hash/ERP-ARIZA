@@ -3,6 +3,14 @@ import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
 import { perfilSchema, type Perfil, type RolUsuario } from '../types/schemas';
 import { parsearErrorSupabase } from '../services/errorHandler';
+import {
+  CLAVE_ULTIMA_ACTIVIDAD,
+  CLAVE_INICIO_SESION,
+  CLAVE_LOGOUT_EVENTO,
+  CLAVE_MENSAJE_LOGOUT,
+  comprobarExpiracionSesion,
+  limpiarClavesSesionAriza,
+} from '../config/sesion';
 
 export interface AuthContextType {
   user: User | null;
@@ -57,6 +65,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (session?.user && isMounted) {
+          // Requisito 4: Al recargar página o abrir pestaña con sesión existente,
+          // comprobar si la sesión ya expiró antes de renderizar pantallas protegidas.
+          const estado = comprobarExpiracionSesion(session.user);
+          if (estado.expirada) {
+            limpiarClavesSesionAriza();
+            if (estado.mensaje) {
+              try {
+                sessionStorage.setItem(CLAVE_MENSAJE_LOGOUT, estado.mensaje);
+              } catch {
+                // ignore
+              }
+            }
+            await supabase.auth.signOut();
+            if (isMounted) {
+              setUser(null);
+              setPerfil(null);
+              setLoading(false);
+            }
+            return;
+          }
+
+          // Si la sesión es válida y no había marca de actividad, inicializarla
+          if (!localStorage.getItem(CLAVE_ULTIMA_ACTIVIDAD)) {
+            const ahora = Date.now().toString();
+            try {
+              localStorage.setItem(CLAVE_ULTIMA_ACTIVIDAD, ahora);
+              if (!localStorage.getItem(CLAVE_INICIO_SESION)) {
+                localStorage.setItem(CLAVE_INICIO_SESION, ahora);
+              }
+            } catch {
+              // ignore
+            }
+          }
+
           setUser(session.user);
           const userPerfil = await fetchPerfil(session.user.id);
           if (isMounted) {
@@ -75,14 +117,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session: Session | null) => {
+      async (event, session: Session | null) => {
         if (session?.user) {
+          // Requisito 3: al hacer login correcto, registrar/reiniciar actividad
+          if (event === 'SIGNED_IN') {
+            const ahora = Date.now().toString();
+            try {
+              localStorage.setItem(CLAVE_ULTIMA_ACTIVIDAD, ahora);
+              localStorage.setItem(CLAVE_INICIO_SESION, ahora);
+            } catch {
+              // ignore
+            }
+          }
+
           setUser(session.user);
           const userPerfil = await fetchPerfil(session.user.id);
           if (isMounted) {
             setPerfil(userPerfil);
           }
         } else {
+          // Requisito 3: al cerrar sesión, limpiar todas las claves ariza_*
+          limpiarClavesSesionAriza();
           if (isMounted) {
             setUser(null);
             setPerfil(null);
@@ -114,6 +169,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
+        // Requisito 3: reiniciar ariza_ultima_actividad e inicio de sesión al hacer login correcto
+        const ahora = Date.now().toString();
+        try {
+          localStorage.setItem(CLAVE_ULTIMA_ACTIVIDAD, ahora);
+          localStorage.setItem(CLAVE_INICIO_SESION, ahora);
+        } catch {
+          // ignore
+        }
+
         setUser(data.user);
         const userPerfil = await fetchPerfil(data.user.id);
         setPerfil(userPerfil);
@@ -132,6 +196,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     try {
       setLoading(true);
+
+      // Requisito 2 y 3: Notificar a otras pestañas y limpiar todas las claves ariza_*
+      try {
+        localStorage.setItem(
+          CLAVE_LOGOUT_EVENTO,
+          JSON.stringify({ timestamp: Date.now(), motivo: 'manual' })
+        );
+      } catch {
+        // ignore
+      }
+
+      limpiarClavesSesionAriza();
+
       const { error } = await supabase.auth.signOut();
       setUser(null);
       setPerfil(null);

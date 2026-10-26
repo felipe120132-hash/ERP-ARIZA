@@ -231,7 +231,7 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 | `registrar_movimiento_inventario` | `p_producto_id UUID, p_tipo TEXT, p_cantidad NUMERIC, p_motivo TEXT, p_idempotency_key UUID, p_stock_esperado NUMERIC = NULL` | `JSONB` (`kardex_id, producto_id, tipo_movimiento, cantidad, stock_anterior, stock_resultante, repetido`) | Registra entradas (`ENTRADA`) o conteos físicos (`AJUSTE`, permitiendo `0` existencias e incluyendo ajustes cuando el conteo coincide con el stock actual) de forma atómica e idempotente (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
 | `resumen_financiero_mensual` | `p_mes DATE` | Tabla: `total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto` | Calcula la utilidad neta del mes y si los gastos superaron el presupuesto configurado (exclusivo rol `ADMIN`). |
 | `anular_remision` | `p_remision_id UUID` | `VOID` | Marca la remisión como ANULADA. Triggers reingresan stock y revierten cartera automáticamente (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
-| `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a VENDEDOR y ADMIN). |
+| `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a `VENDEDOR` y `ADMIN` activos; exige perfil activo y que `p_pdf_url` empiece por `https://` con un máximo de 2048 caracteres). |
 
 ---
 

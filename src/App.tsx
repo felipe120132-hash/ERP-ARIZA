@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
+import { LayoutProtegido } from './components/layout/LayoutProtegido';
 import { RutaProtegida } from './components/layout/RutaProtegida';
 import Login from './pages/Login';
 import Catalogo from './pages/Catalogo';
@@ -34,57 +35,24 @@ export const App: React.FC = () => {
                 <Route path="/login" element={<Login />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                {/* Rutas accesibles para usuarios autenticados (ADMIN y VENDEDOR) */}
-                <Route
-                  path="/dashboard"
-                  element={
-                    <RutaProtegida>
-                      <Dashboard />
-                    </RutaProtegida>
-                  }
-                />
-                <Route
-                  path="/catalogo"
-                  element={
-                    <RutaProtegida>
-                      <Catalogo />
-                    </RutaProtegida>
-                  }
-                />
-                <Route
-                  path="/crear-pedido"
-                  element={
-                    <RutaProtegida>
-                      <CrearPedido />
-                    </RutaProtegida>
-                  }
-                />
-                <Route
-                  path="/cartera"
-                  element={
-                    <RutaProtegida>
-                      <Cartera />
-                    </RutaProtegida>
-                  }
-                />
-                <Route
-                  path="/onedrive/callback"
-                  element={
-                    <RutaProtegida>
-                      <OneDriveCallback />
-                    </RutaProtegida>
-                  }
-                />
+                {/* Rutas protegidas agrupadas bajo LayoutProtegido */}
+                <Route element={<LayoutProtegido />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/catalogo" element={<Catalogo />} />
+                  <Route path="/crear-pedido" element={<CrearPedido />} />
+                  <Route path="/cartera" element={<Cartera />} />
+                  <Route path="/onedrive/callback" element={<OneDriveCallback />} />
 
-                {/* Ruta protegida exclusiva para rol ADMIN */}
-                <Route
-                  path="/gastos"
-                  element={
-                    <RutaProtegida rolesPermitidos={['ADMIN']}>
-                      <Gastos />
-                    </RutaProtegida>
-                  }
-                />
+                  {/* Ruta protegida exclusiva para rol ADMIN */}
+                  <Route
+                    path="/gastos"
+                    element={
+                      <RutaProtegida rolesPermitidos={['ADMIN']}>
+                        <Gastos />
+                      </RutaProtegida>
+                    }
+                  />
+                </Route>
               </Routes>
             </main>
           </div>

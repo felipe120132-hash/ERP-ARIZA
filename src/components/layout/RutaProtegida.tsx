@@ -1,7 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { Navigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import type { RolUsuario } from '../../types/schemas';
+import { comprobarExpiracionSesion } from '../../config/sesion';
 
 export interface RutaProtegidaProps {
   children?: React.ReactNode;
@@ -19,7 +20,14 @@ export const RutaProtegida: React.FC<RutaProtegidaProps> = ({
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '50vh',
+        }}
+      >
         <p>Cargando sesión y permisos...</p>
       </div>
     );
@@ -28,6 +36,12 @@ export const RutaProtegida: React.FC<RutaProtegidaProps> = ({
   // Si no hay sesión iniciada, redirigir a /login guardando la ruta previa
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Comprobar si la sesión ya expiró antes de renderizar
+  const estado = comprobarExpiracionSesion(user);
+  if (estado.expirada) {
+    return <Navigate to="/login" state={{ mensaje: estado.mensaje }} replace />;
   }
 
   // Si se especificaron roles permitidos y el rol del usuario no tiene acceso

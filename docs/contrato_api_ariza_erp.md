@@ -172,6 +172,25 @@ const { data, error } = await supabase.rpc('registrar_movimiento_inventario', {
   - `"No se puede registrar una entrada para un producto inactivo."`
   - `"La clave de idempotencia ya fue usada en otro movimiento."`
 
+### `actualizar_pdf_remision`
+Actualiza la columna `pdf_url` de una remisión existente tras subir el archivo PDF a Microsoft OneDrive. Disponible para usuarios autenticados con perfil activo (`ADMIN` y `VENDEDOR`) mediante `SECURITY DEFINER` (con `search_path` protegido).
+
+```javascript
+const { error } = await supabase.rpc('actualizar_pdf_remision', {
+  p_remision_id: 'uuid-de-la-remision',
+  p_pdf_url: 'https://onedrive.example.com/ariza-erp/remision.pdf',
+});
+```
+
+- **Validaciones de seguridad (Migración 009):**
+  - Exige que el usuario invocador tenga un perfil autenticado y activo (`perfiles.activo = true`).
+  - El parámetro `p_pdf_url` no puede ser nulo, debe empezar estrictamente por `https://` (regex `^https://[^[:space:]]+$`) y tener una longitud máxima de 2048 caracteres.
+  - Verifica que la remisión con `p_remision_id` exista en la tabla `remisiones`.
+- **Errores esperables:**
+  - `"No autorizado para actualizar el PDF de una remisión."`
+  - `"La URL del PDF no es válida (debe empezar por https://)."`
+  - `"Remisión con id \"...\" no encontrada."`
+
 ---
 
 ## 5. Edge Function `/functions/v1/onedrive`
