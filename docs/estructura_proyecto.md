@@ -40,6 +40,7 @@ Estas viven en el backend (triggers y funciones RPC), no en el frontend — el f
   - Productos y clientes con movimientos en kardex, remisiones, abonos o documentos asociados no se eliminan físicamente: se desactivan lógicamente (`activo = false`) conservando todo su historial.
   - Documentos vinculados a remisiones (`remision_id`) o de tipo `'FACTURA_DIAN'` están protegidos contra eliminación en el frontend y en la Edge Function `onedrive`.
 - **Roles:** `ADMIN` y `VENDEDOR`, definidos en `perfiles.rol`. RLS y `es_admin_activo()` bloquean en el backend lo que cada rol no puede hacer, y el frontend adapta la UI según el rol.
+- **Seguridad y caducidad de sesión en frontend:** cierre automático por inactividad a los 30 min (con throttle de 15 s) y límite absoluto continuo de 8 horas desde `last_sign_in_at`, con avisos modales preventivos, comprobación reactiva ante cambios de foco/pestaña y sincronización multi-pestaña vía `storage`.
 
 Para el detalle campo por campo: `docs/diccionario_datos.md`.
 Para cómo llamar cada cosa desde React: `docs/contrato_api_ariza_erp.md`.
@@ -92,9 +93,18 @@ erp-ariza/
     └── src/
         ├── App.tsx
         ├── index.css
-        ├── context/AuthContext.tsx
+        ├── config/
+        │   └── sesion.ts              # Configuración de inactividad, límite absoluto y claves de sesión
+        ├── context/
+        │   ├── AuthContext.tsx        # Proveedor de autenticación Supabase y perfil
+        │   └── PedidoContext.tsx      # Estado global del carrito y selección de cliente
+        ├── hooks/
+        │   └── useSesionSegura.ts     # Hook centralizado de caducidad, actividad y sincronización
         ├── components/
-        │   ├── layout/AppLayout.tsx   # Navegación desktop/tablet/móvil con alto contraste y soporte de zoom
+        │   ├── layout/
+        │   │   ├── AppLayout.tsx      # Navegación desktop/tablet/móvil con alto contraste y soporte de zoom
+        │   │   ├── RutaProtegida.tsx  # Verificación previa a render y guarda de roles
+        │   │   └── ModalSesionAviso.tsx # Modal de aviso previo con cuenta regresiva y extensión
         │   ├── remisiones/            # AccionesRemision (PDF, Impresión, Guardado directo en OneDrive), AnularRemision
         │   ├── cartera/               # RegistrarAbono, EditarAbono
         │   └── ui/                    # Componentes Radix/shadcn con soporte de viewport y scroll en zoom alto
@@ -113,6 +123,7 @@ erp-ariza/
         │   ├── AdministrarCliente.tsx
         │   ├── Finanzas.tsx
         │   ├── Documentos.tsx
+        │   ├── Login.tsx              # Autenticación y visualización de advertencias de cierre de sesión
         │   └── OneDriveCallback.tsx
         └── services/                  # Capa de acceso a datos (único punto que invoca supabaseClient)
 ```
@@ -137,6 +148,7 @@ El esquema de base de datos y la capa de acceso fueron auditados y endurecidos c
 - **Inyección de esquema mitigada:** todas las funciones operan con `SET search_path = public, pg_temp`.
 - **Vistas seguras:** `vista_alertas_stock` configurada con `security_invoker = true` para respetar las políticas RLS del usuario que consulta.
 - **Credenciales Microsoft OneDrive cifradas en servidor:** los tokens OAuth nunca salen al navegador; viven cifrados con AES-GCM (`ONEDRIVE_ENCRYPTION_KEY`) en `onedrive_empresa`.
+- **Control de inactividad y vida útil de sesión:** caducidad de tokens y sesión por inactividad en frontend (30 min) y duración máxima (8 h) con cierre atómico y limpieza de marcas temporales locales.
 
 ---
 
@@ -146,6 +158,10 @@ El esquema de base de datos y la capa de acceso fueron auditados y endurecidos c
 VITE_SUPABASE_URL=https://<tu-proyecto>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key-del-proyecto>
 VITE_ONEDRIVE_REDIRECT_URI=http://localhost:5173/onedrive/callback
+
+# Opcionales para seguridad de sesiones (valores predeterminados)
+# VITE_SESION_INACTIVIDAD_MIN=30
+# VITE_SESION_MAXIMA_HORAS=8
 ```
 
 Nunca se usa la `service_role` key ni secretos de Microsoft en el frontend — esas claves solo viven en Supabase Secrets para las Edge Functions.

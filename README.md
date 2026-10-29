@@ -34,6 +34,8 @@ Edita el `.env` recién creado con los valores reales:
 | `VITE_SUPABASE_ANON_KEY` | Supabase → **Project Settings → Data API → Project API keys → anon public** |
 | `TEST_USER_EMAIL` | Email de un usuario real en **Supabase → Authentication → Users** (rol ADMIN recomendado) |
 | `TEST_USER_PASSWORD` | Contraseña del mismo usuario |
+| `VITE_SESION_INACTIVIDAD_MIN` | *(Opcional)* Minutos de inactividad antes de cerrar sesión (por defecto `30`) |
+| `VITE_SESION_MAXIMA_HORAS` | *(Opcional)* Límite máximo continuo de sesión en horas (por defecto `8`) |
 
 > **Importante:** usa siempre la clave **anon** (pública), nunca la `service_role`. La `service_role` bypasea las RLS y solo debe usarse en Edge Functions.
 
@@ -91,7 +93,7 @@ Ejecuta un flujo end-to-end completo usando los servicios ya implementados:
 | **Modelo** | 11 tablas + 2 vistas + tablas empresariales OneDrive (`onedrive_empresa`, `onedrive_oauth`, `onedrive_archivos`) — schemas Zod, tipos TypeScript, migraciones `001` a `007` | ✅ Completo y validado |
 | **Controlador y RPCs** | Servicios (`productos`, `productosAdmin`, `clientes`, `clientesAdmin`, `remisiones`, `cartera`, `gastos`, `presupuestos`, `inventario`, `documentosEmpresa`) + Edge Function `onedrive` + RPCs en PostgreSQL (`crear_remision`, `registrar_abono`, `editar_abono_cartera`, `anular_remision`, `actualizar_pdf_remision`, `resumen_financiero_mensual`, `registrar_movimiento_inventario`) | ✅ Completo y validado |
 | **Seguridad** | RLS activado/forzado, rol `anon` aislado con 0 permisos, `search_path` inmutable, vista con `security_invoker`, RPCs con permisos por rol (`es_admin_activo()`) y cifrado de tokens OneDrive en servidor | 🛡️ Endurecido (Security Advisor) |
-| **Frontend (`frontend/`)** | Aplicación completa en React + TypeScript + Vite + Tailwind + shadcn/ui: Resumen, Catálogo/Pedidos, Remisiones (PDF/Impresión/Guardado en OneDrive), Inventario y Kardex (Entradas, Salidas y Ajustes), Administración de Productos e Imágenes, Cartera y Administración de Clientes (con edición controlada de abonos), Finanzas (Presupuestos y CRUD de Gastos) y Centro Documental OneDrive (con subida, descarga y eliminación segura) | ✅ Completo y validado |
+| **Frontend (`frontend/`)** | Aplicación completa en React + TypeScript + Vite + Tailwind + shadcn/ui: Resumen, Catálogo/Pedidos, Remisiones (PDF/Impresión/Guardado en OneDrive), Inventario y Kardex (Entradas, Salidas y Ajustes), Administración de Productos e Imágenes, Cartera y Administración de Clientes (con edición controlada de abonos), Finanzas (Presupuestos y CRUD de Gastos), Centro Documental OneDrive y Gestión de Sesión Segura (inactividad 30 min, límite absoluto 8 h, modales de aviso preventivo y sincronización multi-pestaña) | ✅ Completo y validado |
 | **QA y Pruebas Automatizadas** | **111 pruebas E2E en Playwright** (`npx playwright test`) + **10 pruebas unitarias del backend OneDrive** (`node --test tests/onedrive-backend.mjs`) cubriendo todas las observaciones de `Test ERP.xlsx` (UI/Zoom/Móvil, Remisiones OneDrive, Inventario/Kardex/Productos, Cartera/Clientes/Abonos, Finanzas/Gastos y Documentos) | ✅ 121/121 pasando |
 
 👉 **Documentación técnica:**

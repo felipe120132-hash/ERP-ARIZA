@@ -18,8 +18,8 @@
    - [gastosService y presupuestosService](#gastosservice-y-presupuestosservice)
    - [inventarioService](#inventarioservice)
    - [documentosEmpresaService](#documentosempresaservice)
-4. [Autenticación: AuthContext y useAuth](#autenticación-authcontext-y-useauth)
-5. [Protección de rutas: RutaProtegida](#protección-de-rutas-rutaprotegida)
+4. [Autenticación: AuthContext, useAuth y authService](#autenticación-authcontext-useauth-y-authservice)
+5. [Seguridad de sesiones y protección de rutas](#seguridad-de-sesiones-y-protección-de-rutas)
 6. [Tipos TypeScript exportados](#tipos-typescript-exportados)
 7. [Manejo de errores](#manejo-de-errores)
 
@@ -167,28 +167,51 @@ Cliente del endpoint empresarial `/functions/v1/onedrive` para la gestión docum
 
 ---
 
-## Autenticación: AuthContext y useAuth
+## Autenticación: AuthContext, useAuth y authService
 
-**Archivos:** `frontend/src/context/AuthContext.tsx` · `frontend/src/hooks/useAuth.ts`
+**Archivos:** `frontend/src/context/AuthContext.tsx` · `frontend/src/hooks/useAuth.ts` · `frontend/src/services/authService.ts`
 
 ```ts
 interface AuthContextType {
   user:    User | null;
   perfil:  Perfil | null;
-  rol:     RolUsuario | null; // 'ADMIN' | 'VENDEDOR' | null
   loading: boolean;
-  signIn:  (email: string, password: string) => Promise<{ data: User | null; error: string | null }>;
-  signOut: () => Promise<{ error: string | null }>;
+  error:   string | null;
+  retry:   () => void;
+  signOut: () => Promise<void>;
 }
 ```
 
+- **`authService.signIn(email, password)`**: Autentica al usuario en Supabase y ejecuta `reiniciarMarcasSesion()`, fijando `ariza_ultima_actividad` y `ariza_inicio_sesion` con `Date.now()`.
+- **`authService.signOut()`**: Limpia de inmediato todas las claves con prefijo `ariza_` mediante `limpiarClavesSesionAriza()` y llama a `supabase.auth.signOut({ scope: 'local' })`.
+
 ---
 
-## Protección de rutas: RutaProtegida
+## Seguridad de sesiones y protección de rutas
 
-**Archivo:** `frontend/src/components/layout/RutaProtegida.tsx`
+**Archivos:** `frontend/src/components/layout/RutaProtegida.tsx` · `frontend/src/config/sesion.ts` · `frontend/src/hooks/useSesionSegura.ts` · `frontend/src/components/layout/ModalSesionAviso.tsx`
 
-Protege rutas por sesión activa y opcionalmente por `rolesPermitidos` (`['ADMIN']`).
+La aplicación implementa una capa continua de seguridad de sesión en el frontend para evitar accesos indebidos en terminales desatendidas:
+
+### 1. `RutaProtegida.tsx`
+- Verifica autenticación activa en Supabase y estado de cuenta activo (`perfil?.activo`).
+- Evalúa sincrónicamente `comprobarExpiracionSesion(user)` **antes** de renderizar pantallas protegidas:
+  - Si la sesión ha vencido, limpia claves `ariza_*`, almacena el mensaje en `sessionStorage`, ejecuta `authService.signOut()` y retorna `<Navigate to="/login" state={{ mensaje: estado.mensaje }} replace />`.
+  - Si la sesión está vigente, renderiza `SesionProtegida`, que activa `useSesionSegura()` y proyecta `{modalAviso}` sobre el `<Outlet />`.
+
+### 2. `useSesionSegura.ts`
+- **Control de inactividad (30 min por defecto):** detecta interacción (`mousedown`, `keydown`, `touchstart`, `scroll`, `visibilitychange`, `focus`) y actualiza `ariza_ultima_actividad` en `localStorage` con un throttle de 15 s.
+- **Límite absoluto (8 h por defecto):** calculado desde `user.last_sign_in_at` (con respaldo en `ariza_inicio_sesion`).
+- **Verificación dual (temporizada y reactiva):** `setInterval` periódico cada 15 s (o cada 1 s con modal abierto) y evaluación reactiva al recuperar el foco o visibilidad de la pestaña (`visibilitychange` / `focus`), comparando diferencias temporales contra `Date.now()`.
+- **Sincronización multi-pestaña:** escucha el evento `storage` en `window` para propagar actividad del usuario y cierres coordinados (`ariza_logout_evento`).
+
+### 3. `ModalSesionAviso.tsx`
+- **Aviso por inactividad:** modal mostrado 1 minuto antes con cuenta regresiva en segundos y botón **«Seguir conectado»** (que restablece la ventana de actividad).
+- **Aviso por límite absoluto:** modal informativo 5 minutos antes que alerta del vencimiento inapelable para permitir guardar cambios pendientes.
+
+### 4. Variables de entorno (sobrescribibles en `.env.local` / `.env.example`):
+- `VITE_SESION_INACTIVIDAD_MIN`: minutos de inactividad tolerados (default `30`).
+- `VITE_SESION_MAXIMA_HORAS`: duración máxima continua en horas (default `8`).
 
 ---
 
@@ -196,6 +219,9 @@ Protege rutas por sesión activa y opcionalmente por `rolesPermitidos` (`['ADMIN
 
 - **`frontend/src/types/schemas.ts`**: `RolUsuario`, `Perfil`, `Producto`, `Cliente`, `PrecioCliente`, `Remision`, `DetalleRemision`, `Kardex`, `AbonoCartera`, `Gasto`, `Presupuesto`, `Documento`, `AlertaStock`, `ResumenFinancieroResult`.
 - **`frontend/src/types/rpcSchemas.ts`**: `CrearRemisionInput`, `RegistrarAbonoInput`, `EditarAbonoInput`, `EditarAbonoRespuesta`, `AnularRemisionInput`, `ResumenFinancieroInput`, `MovimientoInventarioInput`, `MovimientoInventarioRespuesta`.
+- **`frontend/src/config/sesion.ts`**: `MotivoExpiracion`, `EstadoExpiracion`.
+- **`frontend/src/hooks/useSesionSegura.ts`**: `MotivoCierre`, `UseSesionSeguraReturn`.
+- **`frontend/src/components/layout/ModalSesionAviso.tsx`**: `ModalSesionAvisoProps`.
 
 ---
 

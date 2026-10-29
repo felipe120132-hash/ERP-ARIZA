@@ -1,10 +1,10 @@
 # Estado de Cierre y Verificación QA — Frontend y Backend (`Test ERP.xlsx`)
 
-Actualizado: 20 de octubre de 2026.
+Actualizado: 29 de octubre de 2026.
 
 ## Resumen de correcciones completadas y verificadas
 
-Todos los puntos documentados en `Test ERP.xlsx` fueron implementados y verificados con pruebas automatizadas:
+Todos los puntos documentados en `Test ERP.xlsx` y requerimientos de seguridad fueron implementados y verificados:
 
 1. **Interfaz, menús con zoom y navegación móvil (`BUG-003`, `BUG-004`):**
    - Posicionamiento dinámico y scroll interno en desplegables (`Select`) a 100%, 125%, 150% y 175% de zoom.
@@ -24,6 +24,12 @@ Todos los puntos documentados en `Test ERP.xlsx` fueron implementados y verifica
 6. **Documentos y OneDrive (`BUG-011`, `BUG-012`, `TC-009`, `TC-010`):**
    - Botón **«Subir documento»** al inicio de la página y tarjetas móviles responsivas.
    - Eliminación real en Microsoft OneDrive y base de datos (`action: "delete"`), con protección automática para documentos vinculados a remisiones o de tipo `'FACTURA_DIAN'`.
+7. **Seguridad y Cierre de Sesión en Frontend (`config/sesion.ts`, `useSesionSegura.ts`, `ModalSesionAviso.tsx`, `RutaProtegida.tsx`):**
+   - Portada la seguridad de sesión a `frontend/src/` (árbol de producción de Vercel).
+   - Inactividad de 30 min (throttle de 15 s sobre actividad del usuario) y límite absoluto de 8 h desde `last_sign_in_at`.
+   - Modales de aviso previo (1 min antes por inactividad con opción «Seguir conectado»; 5 min antes por límite de 8 h sin extensión).
+   - Sincronización multi-pestaña mediante evento `storage` y claves `ariza_*`.
+   - Bloqueo de render en `RutaProtegida` ante sesiones vencidas y visualización de mensaje en `Login.tsx`.
 
 ## Resultado de la Suite de Pruebas Automatizadas
 
@@ -39,4 +45,4 @@ Todos los puntos documentados en `Test ERP.xlsx` fueron implementados y verifica
    - `database/migrations/007_editar_abono_cartera.sql`
 2. Desplegar la función empresarial actualizada:
    - `supabase functions deploy onedrive`
-3. Publicar el frontend desde `frontend/` en Vercel.
+3. Publicar el frontend desde `frontend/` en Vercel (incluye el cierre automático seguro por inactividad y límite absoluto).

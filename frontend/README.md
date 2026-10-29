@@ -5,7 +5,7 @@ Aplicación web del ERP de **Distribuciones Ariza** en React + TypeScript + Vite
 ## Ejecutar localmente
 
 1. `npm install`
-2. Copiar `.env.example` a `.env.local` y completar únicamente la URL y clave pública de Supabase (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ONEDRIVE_REDIRECT_URI`).
+2. Copiar `.env.example` a `.env.local` y completar únicamente la URL y clave pública de Supabase (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ONEDRIVE_REDIRECT_URI`). Opcionalmente se pueden configurar `VITE_SESION_INACTIVIDAD_MIN` (por defecto 30 min) y `VITE_SESION_MAXIMA_HORAS` (por defecto 8 h).
 3. `npm run dev` — levanta el servidor de desarrollo en `http://localhost:5173`.
 4. `npm run build` — verifica TypeScript (`tsc --noEmit`) y compila el bundle de producción.
 5. `npx playwright test` — ejecuta la suite completa de **111 pruebas E2E**.
@@ -48,3 +48,14 @@ No colocar `service_role`, contraseñas de prueba ni secretos de Microsoft en va
 - Botón **«Subir documento»** ubicado al inicio de la página en escritorio y móvil, antes de los filtros y de la lista de documentos.
 - Subida de PDF/JPG/PNG hasta 5 MB con recuperación de envíos interrumpidos en IndexedDB y descarga autenticada.
 - **Eliminación de documentos**: acción visible para `ADMIN` con diálogo de confirmación, eliminación real en Microsoft Graph y limpieza en `onedrive_archivos` y `documentos`, bloqueando la eliminación de documentos vinculados a remisiones (`remision_id`) o de tipo `'FACTURA_DIAN'`.
+
+### 7. Seguridad de Sesión y Control de Inactividad (`config/sesion.ts`, `hooks/useSesionSegura.ts`, `ModalSesionAviso.tsx`, `RutaProtegida.tsx`)
+- **Cierre por inactividad:** 30 minutos sin interacción del usuario (`mousedown`, `keydown`, `touchstart`, `scroll`, `visibilitychange`, `focus`) con throttle de 15 s sobre la clave `ariza_ultima_actividad` en `localStorage`.
+- **Cierre absoluto:** límite de 8 horas continuas a partir de `session.user.last_sign_in_at` (con respaldo en `ariza_inicio_sesion`).
+- **Comprobación periódica y reactiva:** evaluación cada 15 s (o cada 1 s durante la cuenta regresiva del modal) y al reingresar a la pestaña (`visibilitychange` y `focus`) comparando diferencias temporales contra `Date.now()`, sin depender exclusivamente de temporizadores en segundo plano.
+- **Avisos modales preventivos (`ModalSesionAviso.tsx`):**
+  - **Inactividad:** aviso 1 minuto antes con cuenta regresiva en segundos y botón **«Seguir conectado»** (que restablece la ventana de actividad de inmediato).
+  - **Límite absoluto:** aviso informativo 5 minutos antes advirtiendo del cierre inminente para guardar cambios, sin posibilidad de extensión.
+- **Sincronización multi-pestaña:** propagación inmediata de actividad y de eventos de cierre (`ariza_logout_evento`) entre pestañas abiertas mediante el evento `window.storage`.
+- **Protección previa al render:** `RutaProtegida` verifica si la sesión ya venció al recargar o cargar una URL; si venció, limpia las claves `ariza_*`, invoca `authService.signOut()` y redirige de inmediato a `/login` con el mensaje correspondiente antes de renderizar cualquier pantalla protegida.
+- **Variables configurables:** los tiempos por defecto pueden sobrescribirse mediante `VITE_SESION_INACTIVIDAD_MIN` (minutos) y `VITE_SESION_MAXIMA_HORAS` (horas) en `.env.local` / `.env.example`.
