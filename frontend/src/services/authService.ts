@@ -1,6 +1,10 @@
 import { supabase } from "./supabaseClient";
 import { perfilSchema } from "../types/schemas";
 import { parsearErrorSupabase } from "./errorHandler";
+import {
+  limpiarClavesSesionAriza,
+  reiniciarMarcasSesion,
+} from "../config/sesion";
 export const authService = {
   async session() {
     const { data, error } = await supabase.auth.getSession();
@@ -38,9 +42,11 @@ export const authService = {
       return error.code === "invalid_credentials"
         ? "El correo o la contraseña no son correctos."
         : parsearErrorSupabase(error);
+    reiniciarMarcasSesion();
     return null;
   },
   async signOut() {
+    limpiarClavesSesionAriza();
     const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) throw new Error(parsearErrorSupabase(error));
   },

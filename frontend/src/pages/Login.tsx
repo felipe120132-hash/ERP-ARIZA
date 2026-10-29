@@ -1,5 +1,5 @@
 import BrandLogo from "@/components/BrandLogo";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, Eye, EyeOff, Layers3, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authService } from "@/services/authService";
 import { useAuth } from "@/context/AuthContext";
+import { CLAVE_MENSAJE_LOGOUT } from "@/config/sesion";
+
+function leerMensajeSesion(state: unknown): string | null {
+  if (typeof state === "object" && state !== null && "mensaje" in state) {
+    const mensaje = (state as { mensaje?: unknown }).mensaje;
+    if (typeof mensaje === "string" && mensaje.trim() !== "") return mensaje;
+  }
+  try {
+    const guardado = sessionStorage.getItem(CLAVE_MENSAJE_LOGOUT);
+    if (guardado) {
+      sessionStorage.removeItem(CLAVE_MENSAJE_LOGOUT);
+      return guardado;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export default function Login() {
   const {
     user,
@@ -22,6 +41,24 @@ export default function Login() {
     [show, setShow] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
+
+  const [mensajeSesion, setMensajeSesion] = useState<string | null>(() =>
+    leerMensajeSesion(location.state),
+  );
+
+  useEffect(() => {
+    const msg = leerMensajeSesion(location.state);
+    if (msg) {
+      setMensajeSesion(msg);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    if (mensajeSesion && user) {
+      void signOut();
+    }
+  }, [mensajeSesion, user, signOut]);
+
   const from =
     typeof location.state?.from === "string" &&
     location.state.from.startsWith("/") &&
@@ -29,19 +66,28 @@ export default function Login() {
     location.state.from !== "/login"
       ? location.state.from
       : "/catalogo";
-  if (user && perfil?.activo && !loading) return <Navigate to={from} replace />;
+
+  if (user && perfil?.activo && !loading && !mensajeSesion) {
+    return <Navigate to={from} replace />;
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      setError(await authService.signIn(email.trim(), password));
+      const err = await authService.signIn(email.trim(), password);
+      setError(err);
+      if (!err) {
+        setMensajeSesion(null);
+      }
     } catch {
       setError("No pudimos iniciar sesión. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }
   }
+
   return (
     <div className="login-shell">
       <section className="login-story">
@@ -97,6 +143,11 @@ export default function Login() {
           <span className="eyebrow">BIENVENIDO DE NUEVO</span>
           <h2>Ingresa a tu espacio</h2>
           <p className="muted">Usa tu cuenta de Distribuciones Ariza.</p>
+          {mensajeSesion && (
+            <div className="sesion-cerrada-aviso" role="status">
+              {mensajeSesion}
+            </div>
+          )}
           {user && sessionError ? (
             <div className="space-y-4">
               <div className="error-box" role="alert">
