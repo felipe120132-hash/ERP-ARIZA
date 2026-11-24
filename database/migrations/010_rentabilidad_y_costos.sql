@@ -74,15 +74,15 @@ CREATE POLICY costos_producto_admin_all
   ON public.costos_producto
   FOR ALL
   TO authenticated
-  USING (es_admin_activo())
-  WITH CHECK (es_admin_activo());
+  USING (public.obtener_rol_actual() = 'ADMIN')
+  WITH CHECK (public.obtener_rol_actual() = 'ADMIN');
 
 DROP POLICY IF EXISTS costos_detalle_remision_admin_select ON public.costos_detalle_remision;
 CREATE POLICY costos_detalle_remision_admin_select
   ON public.costos_detalle_remision
   FOR SELECT
   TO authenticated
-  USING (es_admin_activo());
+  USING (public.obtener_rol_actual() = 'ADMIN');
 
 -- --------------------------------------------------------------------------
 -- 4. Trigger: congelar costo de llegada al insertar líneas en detalles_remision
