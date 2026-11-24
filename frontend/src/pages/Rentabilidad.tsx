@@ -392,7 +392,7 @@ function RentabilidadAdmin() {
           ) : (
             <>
               <div className="order-table-wrap">
-                <table className="order-table">
+                <table className="order-table rentabilidad-table">
                   <thead>
                     <tr>
                       <th>Producto</th>
@@ -410,7 +410,7 @@ function RentabilidadAdmin() {
                         const audit = auditCostos[item.producto.id];
                         return (
                           <tr key={item.producto.id}>
-                            <td>
+                            <td className="rentabilidad-card-head">
                               <strong>{item.producto.nombre}</strong>
                               <small className="muted block">
                                 {item.producto.sku} · {item.producto.categoria}
@@ -426,7 +426,7 @@ function RentabilidadAdmin() {
                                 </small>
                               )}
                             </td>
-                            <td>
+                            <td data-label="Precio de llegada">
                               {item.costo_llegada === null ? (
                                 <span className="inventory-state amarillo">
                                   Sin registrar
@@ -435,7 +435,7 @@ function RentabilidadAdmin() {
                                 <strong>{formatCOP(item.costo_llegada)}</strong>
                               )}
                             </td>
-                            <td>
+                            <td data-label="Venta Tienda / Ganancia">
                               <div className="profit-cell">
                                 <span>
                                   Venta: {formatCOP(item.producto.precio_tienda)}
@@ -449,7 +449,7 @@ function RentabilidadAdmin() {
                                 </span>
                               </div>
                             </td>
-                            <td>
+                            <td data-label="Venta Distribuidor / Ganancia">
                               <div className="profit-cell">
                                 <span>
                                   Venta:{" "}
@@ -466,7 +466,7 @@ function RentabilidadAdmin() {
                                 </span>
                               </div>
                             </td>
-                            <td>
+                            <td data-label="Ganancia en el mes">
                               <div className="profit-cell">
                                 <span>
                                   {formatUnits(item.unidades_vendidas_mes)} und.
@@ -490,7 +490,7 @@ function RentabilidadAdmin() {
                                 )}
                               </div>
                             </td>
-                            <td>
+                            <td className="rentabilidad-card-actions">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -601,7 +601,7 @@ function RentabilidadAdmin() {
           ) : (
             <>
               <div className="order-table-wrap">
-                <table className="order-table">
+                <table className="order-table rentabilidad-table">
                   <thead>
                     <tr>
                       <th>Remisión</th>
@@ -619,7 +619,7 @@ function RentabilidadAdmin() {
                         const anulada = venta.remision.estado === "ANULADA";
                         return (
                           <tr key={venta.remision.id}>
-                            <td>
+                            <td className="rentabilidad-card-head">
                               <strong>#{venta.remision.consecutivo}</strong>
                               <small className="muted block">
                                 {new Intl.DateTimeFormat("es-CO", {
@@ -628,14 +628,14 @@ function RentabilidadAdmin() {
                                 · {venta.remision.tipo_pago}
                               </small>
                             </td>
-                            <td>
+                            <td data-label="Cliente">
                               <strong>{venta.nombre_cliente}</strong>
                               <small className="muted block">
                                 {venta.tipo_cliente ?? "Cliente"} ·{" "}
                                 {venta.remision.estado}
                               </small>
                             </td>
-                            <td>
+                            <td data-label="Venta (sin IVA)">
                               <div className="profit-cell">
                                 <strong>
                                   {formatCOP(venta.remision.subtotal)}
@@ -648,7 +648,7 @@ function RentabilidadAdmin() {
                                 )}
                               </div>
                             </td>
-                            <td>
+                            <td data-label="Costo de productos">
                               {venta.lineas_sin_costo > 0 ? (
                                 <div className="profit-cell">
                                   <span>{formatCOP(venta.costo_total)}</span>
@@ -663,7 +663,7 @@ function RentabilidadAdmin() {
                                 <span>{formatCOP(venta.costo_total)}</span>
                               )}
                             </td>
-                            <td>
+                            <td data-label="Ganancia de la venta">
                               {anulada ? (
                                 <span className="inventory-state rojo">
                                   Anulada (sin efecto)
@@ -688,7 +688,7 @@ function RentabilidadAdmin() {
                                 </div>
                               )}
                             </td>
-                            <td>
+                            <td className="rentabilidad-card-actions">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -994,7 +994,7 @@ function DesgloseVentaSheet({
             </div>
 
             <div className="order-table-wrap">
-              <table className="order-table">
+              <table className="order-table rentabilidad-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -1006,13 +1006,13 @@ function DesgloseVentaSheet({
                 <tbody>
                   {venta.lineas.map((linea) => (
                     <tr key={linea.detalle_id}>
-                      <td>
+                      <td className="rentabilidad-card-head">
                         <strong>{linea.nombre_producto}</strong>
                         <small className="muted block">
                           {linea.sku} · Cant: {formatUnits(linea.cantidad)}
                         </small>
                       </td>
-                      <td>
+                      <td data-label="Llegó a (u.)">
                         {linea.costo_unitario === null ? (
                           <Button
                             variant="outline"
@@ -1034,7 +1034,7 @@ function DesgloseVentaSheet({
                           </div>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Se vendió a (u.)">
                         <div className="profit-cell">
                           <span>{formatCOP(linea.precio_unitario)}</span>
                           <small className="muted">
@@ -1042,7 +1042,7 @@ function DesgloseVentaSheet({
                           </small>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Ganancia total">
                         {linea.ganancia_linea === null ? (
                           <span className="muted">Sin costo</span>
                         ) : (
