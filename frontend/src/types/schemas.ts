@@ -207,3 +207,25 @@ export const resumenFinancieroResultSchema = z.object({
 export type ResumenFinancieroResult = z.infer<
   typeof resumenFinancieroResultSchema
 >;
+
+// ---------------------------------------------------------------------------
+// 2.12 costos_producto y 2.13 costos_detalle_remision (Rentabilidad)
+// ---------------------------------------------------------------------------
+export const costoProductoSchema = z.object({
+  producto_id: uuidSchema,
+  costo_llegada: z.coerce.number().nonnegative(),
+  actualizado_por: uuidSchema.nullable().optional(),
+  created_at: z.coerce.date().optional(),
+  updated_at: z.coerce.date(),
+});
+export type CostoProducto = z.infer<typeof costoProductoSchema>;
+
+export const costoDetalleRemisionSchema = z.object({
+  detalle_remision_id: uuidSchema,
+  remision_id: uuidSchema,
+  producto_id: uuidSchema,
+  costo_unitario: z.coerce.number().nonnegative(),
+  costo_linea: z.coerce.number().nonnegative(),
+  created_at: z.coerce.date(),
+});
+export type CostoDetalleRemision = z.infer<typeof costoDetalleRemisionSchema>;

@@ -87,3 +87,24 @@ export const ResumenFinancieroInputSchema = z.object({
 export type ResumenFinancieroInput = z.infer<
   typeof ResumenFinancieroInputSchema
 >;
+
+// ---------------------------------------------------------------------------
+// 5. guardar_costo_producto
+// ---------------------------------------------------------------------------
+export const GuardarCostoProductoInputSchema = z.object({
+  p_producto_id: uuidSchema,
+  p_costo_llegada: z
+    .number()
+    .finite({ message: "El costo de llegada debe ser un número válido." })
+    .nonnegative({ message: "El costo de llegada no puede ser negativo." })
+    .max(9999999999.99, {
+      message: "El costo de llegada supera el límite permitido.",
+    })
+    .refine(
+      (v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.0001,
+      "El costo de llegada admite como máximo dos decimales.",
+    ),
+});
+export type GuardarCostoProductoInput = z.infer<
+  typeof GuardarCostoProductoInputSchema
+>;

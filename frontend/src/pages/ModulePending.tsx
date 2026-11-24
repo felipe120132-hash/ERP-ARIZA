@@ -19,6 +19,10 @@ const modules: Record<string, [string, string]> = {
     "Finanzas y gastos",
     "Este espacio reunirá los gastos operacionales y el resumen financiero mensual.",
   ],
+  "/rentabilidad": [
+    "Rentabilidad y costos",
+    "Este espacio reúne los costos de llegada y las ganancias por producto y por venta.",
+  ],
   "/documentos": [
     "Centro documental",
     "Aquí reuniremos las remisiones y documentos cuando esté lista la integración con OneDrive.",
@@ -27,7 +31,9 @@ const modules: Record<string, [string, string]> = {
 export default function ModulePending() {
   const { pathname } = useLocation();
   const { perfil } = useAuth();
-  const forbidden = pathname === "/finanzas" && perfil?.rol !== "ADMIN";
+  const forbidden =
+    (pathname === "/finanzas" || pathname === "/rentabilidad") &&
+    perfil?.rol !== "ADMIN";
   const [title, description] = forbidden
     ? [
         "Acceso restringido",

@@ -569,3 +569,76 @@ GRANT EXECUTE ON FUNCTION public.editar_abono_cartera(UUID, UUID, NUMERIC, TEXT,
 
 COMMENT ON FUNCTION public.editar_abono_cartera(UUID, UUID, NUMERIC, TEXT, UUID, TEXT, NUMERIC) IS
   'Corrige un abono de cartera de forma atómica y trazable (solo ADMIN activo), actualizando el saldo del cliente y validando límites por remisión.';
+
+
+-- --------------------------------------------------------------------------
+-- RPC: guardar_costo_producto  (Migración: 010_rentabilidad_y_costos.sql)
+-- --------------------------------------------------------------------------
+-- Registra o actualiza de forma atómica el precio unitario de llegada
+-- (costo de compra) de un producto. Exclusivo para rol ADMIN activo.
+-- --------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.guardar_costo_producto(
+  p_producto_id   UUID,
+  p_costo_llegada NUMERIC
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_costo_redondeado NUMERIC(12,2);
+  v_registro         public.costos_producto%ROWTYPE;
+BEGIN
+  IF NOT es_admin_activo() THEN
+    RAISE EXCEPTION 'Solo administradores activos pueden gestionar costos de productos.';
+  END IF;
+
+  IF p_producto_id IS NULL THEN
+    RAISE EXCEPTION 'El identificador del producto es obligatorio.';
+  END IF;
+
+  IF p_costo_llegada IS NULL OR p_costo_llegada < 0 THEN
+    RAISE EXCEPTION 'El costo de llegada debe ser un número mayor o igual a cero.';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.productos WHERE id = p_producto_id) THEN
+    RAISE EXCEPTION 'Producto no encontrado.';
+  END IF;
+
+  v_costo_redondeado := ROUND(p_costo_llegada, 2);
+
+  INSERT INTO public.costos_producto (
+    producto_id,
+    costo_llegada,
+    actualizado_por,
+    updated_at
+  )
+  VALUES (
+    p_producto_id,
+    v_costo_redondeado,
+    auth.uid(),
+    now()
+  )
+  ON CONFLICT (producto_id) DO UPDATE
+    SET costo_llegada   = EXCLUDED.costo_llegada,
+        actualizado_por = EXCLUDED.actualizado_por,
+        updated_at      = now()
+  RETURNING * INTO v_registro;
+
+  RETURN jsonb_build_object(
+    'producto_id',     v_registro.producto_id,
+    'costo_llegada',   v_registro.costo_llegada,
+    'actualizado_por', v_registro.actualizado_por,
+    'created_at',      v_registro.created_at,
+    'updated_at',      v_registro.updated_at
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.guardar_costo_producto(UUID, NUMERIC) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.guardar_costo_producto(UUID, NUMERIC) TO authenticated;
+
+COMMENT ON FUNCTION public.guardar_costo_producto(UUID, NUMERIC) IS
+  'Registra o actualiza el costo unitario de llegada de un producto (exclusivo ADMIN activo).';

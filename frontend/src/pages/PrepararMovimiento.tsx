@@ -13,6 +13,8 @@ import {
   type MovimientoInput,
   type TipoMovimiento,
 } from "@/services/inventarioService";
+import { rentabilidadService } from "@/services/rentabilidadService";
+import { formatCOP } from "@/lib/cartera";
 
 const units = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 2 });
@@ -67,11 +69,13 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
     [attempt, setAttempt] = useState(0);
   const [tipo, setTipo] = useState<TipoMovimiento>(initialTipo),
     [cantidad, setCantidad] = useState(""),
+    [costoLlegada, setCostoLlegada] = useState(""),
     [motivo, setMotivo] = useState(""),
     [error, setError] = useState(""),
     [review, setReview] = useState(false);
 
   const normalizedCantidad = cantidad.trim().replace(",", ".");
+  const normalizedCosto = costoLlegada.trim().replace(",", ".");
 
   async function guardar() {
     if (sending.current || recovery.corrupt || (!pending && (!review || !product)))
@@ -102,14 +106,25 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
     }
     try {
       const r = await inventarioService.registrarMovimiento(input);
+      let notaCosto = "";
+      if (input.p_tipo === "ENTRADA" && normalizedCosto !== "") {
+        const costoRes = await rentabilidadService.guardarCostoProducto(
+          id,
+          Number(normalizedCosto),
+        );
+        notaCosto = costoRes.error
+          ? ` (El stock ingresó, pero no se pudo actualizar el costo de llegada: ${costoRes.error})`
+          : ` Costo de llegada actualizado a ${formatCOP(Number(normalizedCosto))}.`;
+      }
       sessionStorage.removeItem(storageKey);
       setPending(null);
       key.current = crypto.randomUUID();
       setCantidad("");
+      setCostoLlegada("");
       setMotivo("");
       setReview(false);
       setSuccess(
-        `${r.repetido ? "Movimiento recuperado sin duplicarlo" : "Movimiento registrado"}. Stock resultante del movimiento: ${units(r.stock_resultante)} unidades.`,
+        `${r.repetido ? "Movimiento recuperado sin duplicarlo" : "Movimiento registrado"}. Stock resultante del movimiento: ${units(r.stock_resultante)} unidades.${notaCosto}`,
       );
       setAttempt((x) => x + 1);
     } catch (e) {
@@ -199,6 +214,17 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
     if (tipo === "AJUSTE" && delta === 0) {
       setError(
         "El conteo coincide con las existencias; no hace falta un ajuste.",
+      );
+      return;
+    }
+    if (
+      tipo === "ENTRADA" &&
+      normalizedCosto !== "" &&
+      (!/^\d+(\.\d{1,2})?$/.test(normalizedCosto) ||
+        Number(normalizedCosto) > 9999999999.99)
+    ) {
+      setError(
+        "El costo de llegada opcional debe ser un número válido mayor o igual a cero con hasta dos decimales.",
       );
       return;
     }
@@ -326,6 +352,7 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
                     onChange={(e) => {
                       setTipo(e.target.value as TipoMovimiento);
                       setCantidad("");
+                      setCostoLlegada("");
                       setReview(false);
                       setError("");
                     }}
@@ -358,6 +385,29 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
                         : "Total de unidades encontradas. Puede ser cero; la diferencia se muestra al revisar."}
                   </p>
                 </div>
+                {tipo === "ENTRADA" && (
+                  <div>
+                    <Label htmlFor="movimiento-costo-llegada">
+                      Nuevo costo unitario de llegada (COP, opcional)
+                    </Label>
+                    <Input
+                      id="movimiento-costo-llegada"
+                      type="number"
+                      min="0"
+                      max="9999999999.99"
+                      step="0.01"
+                      placeholder="Dejar en blanco para mantener el actual"
+                      value={costoLlegada}
+                      onChange={(e) => {
+                        setCostoLlegada(e.target.value);
+                        setReview(false);
+                      }}
+                    />
+                    <p className="catalog-footnote">
+                      Si el proveedor cambió el precio, ingrésalo aquí para actualizarlo en Rentabilidad.
+                    </p>
+                  </div>
+                )}
                 <div className="client-form-actions">
                   <Label htmlFor="movimiento-motivo">
                     Motivo u observación
@@ -400,6 +450,12 @@ function Formulario({ id, userId }: { id: string; userId: string }) {
                     <dt>Stock previsto</dt>
                     <dd data-testid="stock-previsto">{units(result / 100)}</dd>
                   </div>
+                  {tipo === "ENTRADA" && normalizedCosto !== "" && (
+                    <div>
+                      <dt>Nuevo costo de llegada</dt>
+                      <dd>{formatCOP(Number(normalizedCosto))}</dd>
+                    </div>
+                  )}
                 </dl>
                 <p>{motivo.trim()}</p>
                 <p>

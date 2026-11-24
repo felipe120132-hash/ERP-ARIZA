@@ -221,6 +221,35 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 
 ---
 
+### 2.12 `costos_producto`
+
+Precio unitario de llegada (costo de compra) vigente por producto. Se separa de `productos` para aislar estrictamente por RLS la información sensible de márgenes al rol `ADMIN`.
+
+| Campo / Propiedad API | Tipo de Dato | Nulo (Sí/No) | Clave (PK/FK/Check) | Descripción / Regla de Negocio |
+|---|---|---|---|---|
+| `producto_id` | `UUID` | No | PK, FK → `productos(id)` `ON DELETE CASCADE` | Producto costeado (una fila por SKU). |
+| `costo_llegada` | `NUMERIC(12,2)` | No | Check `>= 0` | Precio unitario al que llega la mercancía. |
+| `actualizado_por` | `UUID` | Sí | FK → `perfiles(id)` | Administrador que actualizó el costo por última vez. |
+| `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Fecha de registro inicial. |
+| `updated_at` | `TIMESTAMPTZ` | No | Default `now()` | Fecha de última actualización. |
+
+---
+
+### 2.13 `costos_detalle_remision`
+
+Snapshot inmutable del costo unitario vigente en el momento de cada venta. Escrito automáticamente mediante el trigger `trg_congelar_costo_por_remision` al insertar filas en `detalles_remision`. Solo consultable por `ADMIN`.
+
+| Campo / Propiedad API | Tipo de Dato | Nulo (Sí/No) | Clave (PK/FK/Check) | Descripción / Regla de Negocio |
+|---|---|---|---|---|
+| `detalle_remision_id` | `UUID` | No | PK, FK → `detalles_remision(id)` `ON DELETE CASCADE` | Línea de venta cuyo costo se congeló. |
+| `remision_id` | `UUID` | No | FK → `remisiones(id)` `ON DELETE CASCADE` | Remisión asociada (facilita consultas por período/venta). |
+| `producto_id` | `UUID` | No | FK → `productos(id)` | Producto vendido en la línea. |
+| `costo_unitario` | `NUMERIC(12,2)` | No | Check `>= 0` | Costo unitario de llegada congelado en el momento de la venta. |
+| `costo_linea` | `NUMERIC(12,2)` | No | Check `>= 0` | `ROUND(costo_unitario * cantidad, 2)`. |
+| `created_at` | `TIMESTAMPTZ` | No | Default `now()` | Momento exacto del snapshot. |
+
+---
+
 ## 3. Funciones RPC expuestas a React (`supabase.rpc(...)`)
 
 | Función | Parámetros | Retorna | Descripción |
@@ -232,6 +261,7 @@ Enlaces a archivos alojados en Microsoft OneDrive (facturas DIAN, cotizaciones d
 | `resumen_financiero_mensual` | `p_mes DATE` | Tabla: `total_ventas, total_gastos, ganancia_neta, presupuesto_limite, excede_presupuesto` | Calcula la utilidad neta del mes y si los gastos superaron el presupuesto configurado (exclusivo rol `ADMIN`). |
 | `anular_remision` | `p_remision_id UUID` | `VOID` | Marca la remisión como ANULADA. Triggers reingresan stock y revierten cartera automáticamente (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
 | `actualizar_pdf_remision` | `p_remision_id UUID, p_pdf_url TEXT` | `VOID` | Actualiza la columna `pdf_url` tras subir el archivo a OneDrive (`SECURITY DEFINER` para permitir a `VENDEDOR` y `ADMIN` activos; exige perfil activo y que `p_pdf_url` empiece por `https://` con un máximo de 2048 caracteres). |
+| `guardar_costo_producto` | `p_producto_id UUID, p_costo_llegada NUMERIC` | `JSONB` (`producto_id, costo_llegada, actualizado_por, created_at, updated_at`) | Registra o actualiza de forma atómica el precio unitario de llegada de un producto (`SECURITY DEFINER`, exclusivo `ADMIN` activo). |
 
 ---
 

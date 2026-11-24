@@ -10,6 +10,7 @@ const ProductosAdmin = lazy(() => import("@/pages/ProductosAdmin"));
 const AdministrarProducto = lazy(() => import("@/pages/AdministrarProducto"));
 const Resumen = lazy(() => import("@/pages/Resumen"));
 const Finanzas = lazy(() => import("@/pages/Finanzas"));
+const Rentabilidad = lazy(() => import("@/pages/Rentabilidad"));
 const Inventario = lazy(() => import("@/pages/Inventario"));
 const PrepararMovimiento = lazy(() => import("@/pages/PrepararMovimiento"));
 const Kardex = lazy(() => import("@/pages/Kardex"));
@@ -154,6 +155,14 @@ export default function App() {
                 element={
                   <Suspense fallback={<div role="status">Cargando…</div>}>
                     <Finanzas />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="rentabilidad"
+                element={
+                  <Suspense fallback={<div role="status">Cargando…</div>}>
+                    <Rentabilidad />
                   </Suspense>
                 }
               />
