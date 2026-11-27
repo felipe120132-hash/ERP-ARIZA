@@ -458,6 +458,7 @@ export default function Catalogo() {
         </section>
         <Carrito
           products={products}
+          images={images}
           loading={loading || !!error}
           onCreated={() => void reload()}
         />

@@ -3,7 +3,7 @@ import { subtotalPedido } from "@/lib/subtotalPedido";
 import { formatCOP } from "@/lib/cartera";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShoppingBag, Trash2, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { ShoppingBag, Trash2, CheckCircle2, Eye, EyeOff, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,12 +14,32 @@ import { useAuth } from "@/context/AuthContext";
 import { usePedido } from "@/context/PedidoContext";
 import { normalize } from "@/lib/catalog";
 import type { Cliente, Producto } from "@/types/schemas";
+function CartThumb({ name, url }: { name: string; url?: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="order-line-thumb" aria-hidden="true">
+      {url && !failed ? (
+        <img
+          src={url}
+          alt={name}
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Package size={16} strokeWidth={1.6} />
+      )}
+    </span>
+  );
+}
+
 export default function Carrito({
   products,
+  images = {},
   loading,
   onCreated,
 }: {
   products: Producto[];
+  images?: Record<string, string>;
   loading: boolean;
   onCreated: () => void;
 }) {
@@ -257,15 +277,22 @@ export default function Carrito({
             pedido.lineas.map((line) => {
               const product = products.find((x) => x.id === line.producto.id);
               const importe = estimate?.detalle.get(line.producto.id);
+              const imgPath = product?.imagen_path ?? line.producto.imagen_path;
+              const imgUrl = imgPath ? images[imgPath] : undefined;
               return (
                 <div className="order-line" key={line.producto.id}>
-                  <strong>{line.producto.nombre}</strong>
-                  <small>
-                    {line.producto.sku} ·{" "}
-                    {product
-                      ? `${product.stock_actual} disponibles`
-                      : "Producto no disponible"}
-                  </small>
+                  <span className="order-line-head">
+                    <CartThumb name={line.producto.nombre} url={imgUrl} />
+                    <span className="order-line-info">
+                      <strong>{line.producto.nombre}</strong>
+                      <small>
+                        {line.producto.sku} ·{" "}
+                        {product
+                          ? `${product.stock_actual} disponibles`
+                          : "Producto no disponible"}
+                      </small>
+                    </span>
+                  </span>
                   {importe && (
                     <small className="order-line-price">
                       {formatCOP(importe.precio)} por unidad ·{" "}
