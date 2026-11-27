@@ -425,6 +425,14 @@ function RentabilidadAdmin() {
                                   → {formatCOP(audit.costo_nuevo)}
                                 </small>
                               )}
+                              {item.acuerdos_especiales.length > 0 && (
+                                <small className="muted block">
+                                  {item.acuerdos_especiales.length}{" "}
+                                  {item.acuerdos_especiales.length === 1
+                                    ? "cliente con precio especial"
+                                    : "clientes con precio especial"}
+                                </small>
+                              )}
                             </td>
                             <td data-label="Precio de llegada">
                               {item.costo_llegada === null ? (
@@ -901,6 +909,51 @@ function EditarCostoSheet({
                 <small>Margen: {formatPct(prevMargenDist)}</small>
               </div>
             </div>
+
+            {item.acuerdos_especiales.length > 0 && (
+              <div className="costo-preview-card" style={{ marginTop: 10 }}>
+                <small>
+                  <strong>
+                    Precios especiales pactados (
+                    {item.acuerdos_especiales.length})
+                  </strong>
+                </small>
+                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  {item.acuerdos_especiales.map((ac) => {
+                    const ganEsp = validPreview
+                      ? roundMoney(ac.precio_especial - parsedNum)
+                      : ac.ganancia_especial;
+                    const margEsp =
+                      ganEsp !== null && ac.precio_especial > 0
+                        ? roundMoney((ganEsp / ac.precio_especial) * 100)
+                        : null;
+                    return (
+                      <div
+                        key={ac.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          fontSize: 12,
+                          borderTop: "1px solid #e4ecf4",
+                          paddingTop: 6,
+                        }}
+                      >
+                        <span>
+                          <strong>{ac.nombre_cliente}</strong> · Venta:{" "}
+                          {formatCOP(ac.precio_especial)}
+                        </span>
+                        <span className={profitClass(ganEsp)}>
+                          {ganEsp === null
+                            ? "—"
+                            : `${ganEsp >= 0 ? "+" : ""}${formatCOP(ganEsp)} (${formatPct(margEsp)})`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {validPreview &&
               ((prevGananciaTienda !== null && prevGananciaTienda < 0) ||

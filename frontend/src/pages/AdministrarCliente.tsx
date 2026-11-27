@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { clientesService } from "@/services/clientesService";
 import { productosService } from "@/services/productosService";
+import { rentabilidadService, roundMoney } from "@/services/rentabilidadService";
 import {
   clientesAdminService,
   datosCliente,
@@ -441,6 +442,7 @@ function Precios({ clienteId }: { clienteId: string }) {
     }),
     [rows, setRows] = useState<PrecioCliente[]>([]),
     [products, setProducts] = useState<Producto[]>([]),
+    [costosMap, setCostosMap] = useState<Map<string, number>>(new Map()),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [attempt, setAttempt] = useState(0),
@@ -458,12 +460,18 @@ function Precios({ clienteId }: { clienteId: string }) {
     Promise.all([
       clientesAdminService.precios(clienteId),
       productosService.listarProductos(),
+      rentabilidadService.listarCostosProducto().catch(() => ({ data: null, error: null })),
     ])
-      .then(([prices, p]) => {
+      .then(([prices, p, costosRes]) => {
         if (!live) return;
         if (p.error) throw new Error(p.error);
         setRows(prices);
         setProducts(p.data ?? []);
+        const nextCostos = new Map<string, number>();
+        for (const c of costosRes.data ?? []) {
+          nextCostos.set(c.producto_id, c.costo_llegada);
+        }
+        setCostosMap(nextCostos);
         setLoading(false);
       })
       .catch((e) => {
@@ -599,28 +607,59 @@ function Precios({ clienteId }: { clienteId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((x) => (
-                    <tr key={x.id}>
-                      <td>
-                        {products.find((p) => p.id === x.producto_id)?.nombre ??
-                          x.producto_id}
-                      </td>
-                      <td>{formatCOP(x.precio_especial)}</td>
-                      <td>
-                        <Button
-                          variant="ghost"
-                          disabled={busy || pending}
-                          onClick={() => {
-                            setSelected(x.producto_id);
-                            setAmount(String(x.precio_especial));
-                            setAction(null);
-                          }}
-                        >
-                          Editar precio
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((x) => {
+                    const costo = costosMap.get(x.producto_id);
+                    const ganancia =
+                      costo !== undefined
+                        ? roundMoney(x.precio_especial - costo)
+                        : null;
+                    const margenPct =
+                      ganancia !== null && x.precio_especial > 0
+                        ? roundMoney((ganancia / x.precio_especial) * 100)
+                        : null;
+                    return (
+                      <tr key={x.id}>
+                        <td>
+                          {products.find((p) => p.id === x.producto_id)?.nombre ??
+                            x.producto_id}
+                        </td>
+                        <td>
+                          <div className="profit-cell">
+                            <strong>{formatCOP(x.precio_especial)}</strong>
+                            {costo !== undefined && ganancia !== null && (
+                              <small
+                                className={
+                                  ganancia >= 0
+                                    ? "profit-positive"
+                                    : "profit-negative"
+                                }
+                              >
+                                Llegada: {formatCOP(costo)} · Ganancia:{" "}
+                                {ganancia >= 0 ? "+" : ""}
+                                {formatCOP(ganancia)}
+                                {margenPct !== null
+                                  ? ` (${margenPct.toLocaleString("es-CO", { maximumFractionDigits: 1 })}%)`
+                                  : ""}
+                              </small>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <Button
+                            variant="ghost"
+                            disabled={busy || pending}
+                            onClick={() => {
+                              setSelected(x.producto_id);
+                              setAmount(String(x.precio_especial));
+                              setAction(null);
+                            }}
+                          >
+                            Editar precio
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -668,6 +707,56 @@ function Precios({ clienteId }: { clienteId: string }) {
                     setAction(null);
                   }}
                 />
+                {product && (
+                  <div className="costo-preview-card" style={{ marginTop: 10 }}>
+                    <small>
+                      Precio Tienda: {formatCOP(product.precio_tienda)} ·
+                      Distribuidor: {formatCOP(product.precio_distribuidor)}
+                    </small>
+                    {costosMap.has(product.id) ? (
+                      (() => {
+                        const costo = costosMap.get(product.id)!;
+                        const parsedEsp =
+                          amount.trim() === "" ? NaN : Number(amount);
+                        const gan =
+                          Number.isFinite(parsedEsp) && parsedEsp >= 0
+                            ? roundMoney(parsedEsp - costo)
+                            : null;
+                        const marg =
+                          gan !== null && parsedEsp > 0
+                            ? roundMoney((gan / parsedEsp) * 100)
+                            : null;
+                        return (
+                          <>
+                            <small>
+                              Precio de llegada: <strong>{formatCOP(costo)}</strong>
+                            </small>
+                            {gan !== null && (
+                              <strong
+                                className={
+                                  gan >= 0
+                                    ? "profit-positive"
+                                    : "profit-negative"
+                                }
+                              >
+                                Ganancia con precio especial:{" "}
+                                {gan >= 0 ? "+" : ""}
+                                {formatCOP(gan)}
+                                {marg !== null
+                                  ? ` (${marg.toLocaleString("es-CO", { maximumFractionDigits: 1 })}%)`
+                                  : ""}
+                              </strong>
+                            )}
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <small>
+                        Sin precio de llegada registrado en Rentabilidad.
+                      </small>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="receipt-tools">
                 <Button disabled={!valid} onClick={() => setAction("save")}>

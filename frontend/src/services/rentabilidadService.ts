@@ -6,12 +6,14 @@ import {
   costoDetalleRemisionSchema,
   costoProductoSchema,
   detalleRemisionSchema,
+  precioClienteSchema,
   productoSchema,
   remisionSchema,
   type Cliente,
   type CostoDetalleRemision,
   type CostoProducto,
   type DetalleRemision,
+  type PrecioCliente,
   type Producto,
   type Remision,
 } from "../types/schemas";
@@ -22,6 +24,15 @@ export const roundMoney = (value: number): number =>
 
 export type OrigenCostoLinea = "CONGELADO" | "ACTUAL" | "SIN_COSTO";
 
+export interface AcuerdoEspecialRentabilidad {
+  id: string;
+  cliente_id: string;
+  nombre_cliente: string;
+  precio_especial: number;
+  ganancia_especial: number | null;
+  margen_especial_pct: number | null;
+}
+
 export interface RentabilidadProductoItem {
   producto: Producto;
   costo_llegada: number | null;
@@ -30,6 +41,7 @@ export interface RentabilidadProductoItem {
   margen_tienda_pct: number | null;
   ganancia_distribuidor: number | null;
   margen_distribuidor_pct: number | null;
+  acuerdos_especiales: AcuerdoEspecialRentabilidad[];
   unidades_vendidas_mes: number;
   ventas_sin_iva_mes: number;
   costo_ventas_mes: number | null;
@@ -237,17 +249,19 @@ export const rentabilidadService = {
 
       const { inicio, fin } = rangoMesUtc(mesYYYYMM);
 
-      const [prodRes, costosRes, cliRes, remRes] = await Promise.all([
-        supabase.from("productos").select("*").order("sku").order("id"),
-        supabase.from("costos_producto").select("*"),
-        supabase.from("clientes").select("*"),
-        supabase
-          .from("remisiones")
-          .select("*")
-          .gte("fecha", inicio)
-          .lt("fecha", fin)
-          .order("fecha", { ascending: false }),
-      ]);
+      const [prodRes, costosRes, cliRes, remRes, preciosEspRes] =
+        await Promise.all([
+          supabase.from("productos").select("*").order("sku").order("id"),
+          supabase.from("costos_producto").select("*"),
+          supabase.from("clientes").select("*"),
+          supabase
+            .from("remisiones")
+            .select("*")
+            .gte("fecha", inicio)
+            .lt("fecha", fin)
+            .order("fecha", { ascending: false }),
+          supabase.from("precios_cliente").select("*"),
+        ]);
 
       if (prodRes.error) {
         return { data: null, error: parsearErrorSupabase(prodRes.error) };
@@ -278,6 +292,12 @@ export const rentabilidadService = {
       if (!parsedRem.success) {
         return { data: null, error: "Error de validación al cargar remisiones del período." };
       }
+      const parsedPreciosEsp = z
+        .array(precioClienteSchema)
+        .safeParse(preciosEspRes.data ?? []);
+      const preciosEspecialesList: PrecioCliente[] = parsedPreciosEsp.success
+        ? parsedPreciosEsp.data
+        : [];
 
       const productosOrdenados = parsedProd.data.sort(
         (a, b) =>
@@ -350,6 +370,13 @@ export const rentabilidadService = {
         const bucket = detallesPorRemision.get(det.remision_id);
         if (bucket) bucket.push(det);
         else detallesPorRemision.set(det.remision_id, [det]);
+      }
+
+      const acuerdosPorProducto = new Map<string, PrecioCliente[]>();
+      for (const pe of preciosEspecialesList) {
+        const list = acuerdosPorProducto.get(pe.producto_id);
+        if (list) list.push(pe);
+        else acuerdosPorProducto.set(pe.producto_id, [pe]);
       }
 
       // Acumuladores mensuales por producto (solo remisiones no anuladas)
@@ -532,6 +559,31 @@ export const rentabilidadService = {
           const gananciaMes =
             costoMes !== null ? roundMoney(ventasMes - costoMes) : null;
 
+          const acuerdosRaw = acuerdosPorProducto.get(prod.id) ?? [];
+          const acuerdos_especiales: AcuerdoEspecialRentabilidad[] = acuerdosRaw
+            .map((pe) => {
+              const cli = clienteMap.get(pe.cliente_id);
+              const ganEsp =
+                costo !== null
+                  ? roundMoney(pe.precio_especial - costo)
+                  : null;
+              const margEsp =
+                ganEsp !== null && pe.precio_especial > 0
+                  ? roundMoney((ganEsp / pe.precio_especial) * 100)
+                  : null;
+              return {
+                id: pe.id,
+                cliente_id: pe.cliente_id,
+                nombre_cliente: cli?.nombre_tienda ?? "Cliente",
+                precio_especial: pe.precio_especial,
+                ganancia_especial: ganEsp,
+                margen_especial_pct: margEsp,
+              };
+            })
+            .sort((a, b) =>
+              a.nombre_cliente.localeCompare(b.nombre_cliente, "es"),
+            );
+
           return {
             producto: prod,
             costo_llegada: costo,
@@ -540,6 +592,7 @@ export const rentabilidadService = {
             margen_tienda_pct: margenTiendaPct,
             ganancia_distribuidor: gananciaDist,
             margen_distribuidor_pct: margenDistPct,
+            acuerdos_especiales,
             unidades_vendidas_mes: unidadesMes,
             ventas_sin_iva_mes: ventasMes,
             costo_ventas_mes: costoMes,
