@@ -3,12 +3,13 @@ import { subtotalPedido } from "@/lib/subtotalPedido";
 import { formatCOP } from "@/lib/cartera";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShoppingBag, Trash2, CheckCircle2 } from "lucide-react";
+import { ShoppingBag, Trash2, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch as SwitchPrimitive } from "radix-ui";
 import { clientesService } from "@/services/clientesService";
+import { rentabilidadService, roundMoney } from "@/services/rentabilidadService";
 import { useAuth } from "@/context/AuthContext";
 import { usePedido } from "@/context/PedidoContext";
 import { normalize } from "@/lib/catalog";
@@ -40,7 +41,35 @@ export default function Carrito({
       } catch {
         return false;
       }
-    });
+    }),
+    [mostrarGanancia, setMostrarGanancia] = useState(false),
+    [costosMap, setCostosMap] = useState<Map<string, number> | null>(null),
+    [cargandoCostos, setCargandoCostos] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin || !mostrarGanancia || costosMap !== null) return;
+    let live = true;
+    setCargandoCostos(true);
+    rentabilidadService
+      .listarCostosProducto()
+      .then((res) => {
+        if (!live) return;
+        const map = new Map<string, number>();
+        for (const item of res.data ?? []) {
+          map.set(item.producto_id, item.costo_llegada);
+        }
+        setCostosMap(map);
+        setCargandoCostos(false);
+      })
+      .catch(() => {
+        if (!live) return;
+        setCostosMap(new Map());
+        setCargandoCostos(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [isAdmin, mostrarGanancia, costosMap]);
   useEffect(() => {
     let active = true;
     setCargando(true);
@@ -96,6 +125,53 @@ export default function Carrito({
     !cargando &&
     !error &&
     !!estimate;
+
+  let gananciaPedido: {
+    ganancia: number;
+    margenPct: number | null;
+    lineasConCosto: number;
+    lineasSinCosto: number;
+    porProducto: Map<string, number | null>;
+  } | null = null;
+
+  if (isAdmin && estimate && costosMap) {
+    let subtotalCosteado = 0;
+    let costoTotal = 0;
+    let lineasConCosto = 0;
+    let lineasSinCosto = 0;
+    const porProducto = new Map<string, number | null>();
+
+    for (const line of pedido.lineas) {
+      const imp = estimate.detalle.get(line.producto.id);
+      const costoUnitario = costosMap.get(line.producto.id);
+      const qty = Number(line.cantidad);
+      if (imp && costoUnitario !== undefined && Number.isFinite(qty) && qty > 0) {
+        const costoLinea = roundMoney(costoUnitario * qty);
+        const ganLinea = roundMoney(imp.subtotal - costoLinea);
+        porProducto.set(line.producto.id, ganLinea);
+        subtotalCosteado = roundMoney(subtotalCosteado + imp.subtotal);
+        costoTotal = roundMoney(costoTotal + costoLinea);
+        lineasConCosto++;
+      } else {
+        porProducto.set(line.producto.id, null);
+        lineasSinCosto++;
+      }
+    }
+
+    const ganancia = roundMoney(subtotalCosteado - costoTotal);
+    const margenPct =
+      subtotalCosteado > 0
+        ? roundMoney((ganancia / subtotalCosteado) * 100)
+        : null;
+
+    gananciaPedido = {
+      ganancia,
+      margenPct,
+      lineasConCosto,
+      lineasSinCosto,
+      porProducto,
+    };
+  }
   return (
     <aside
       id="pedido-en-curso"
@@ -196,6 +272,41 @@ export default function Carrito({
                       {importe.especial ? "Precio especial" : "Precio base"}
                       <br />
                       Subtotal: {formatCOP(importe.subtotal)}
+                      {isAdmin && (
+                        <>
+                          <br />
+                          Ganancia:{" "}
+                          {!mostrarGanancia ? (
+                            <strong>$ ****</strong>
+                          ) : cargandoCostos ? (
+                            "Calculando…"
+                          ) : gananciaPedido?.porProducto.get(line.producto.id) !=
+                            null ? (
+                            <strong
+                              className={
+                                (gananciaPedido.porProducto.get(
+                                  line.producto.id,
+                                ) ?? 0) >= 0
+                                  ? "profit-positive"
+                                  : "profit-negative"
+                              }
+                            >
+                              {(gananciaPedido.porProducto.get(
+                                line.producto.id,
+                              ) ?? 0) >= 0
+                                ? "+"
+                                : ""}
+                              {formatCOP(
+                                gananciaPedido.porProducto.get(
+                                  line.producto.id,
+                                ) ?? 0,
+                              )}
+                            </strong>
+                          ) : (
+                            "Sin costo registrado"
+                          )}
+                        </>
+                      )}
                     </small>
                   )}
                   <div>
@@ -292,6 +403,60 @@ export default function Carrito({
         <strong data-testid="pedido-subtotal">
           {estimate ? formatCOP(estimate.subtotal) : "—"}
         </strong>
+        {isAdmin && (
+          <div className="order-profit-row">
+            <div>
+              <small>Ganancia estimada del pedido</small>
+              <span
+                className={`order-profit-value ${
+                  mostrarGanancia &&
+                  gananciaPedido &&
+                  gananciaPedido.lineasConCosto > 0
+                    ? gananciaPedido.ganancia >= 0
+                      ? "profit-positive"
+                      : "profit-negative"
+                    : ""
+                }`}
+                data-testid="pedido-ganancia"
+              >
+                {!mostrarGanancia
+                  ? "$ ****"
+                  : !estimate
+                    ? "—"
+                    : cargandoCostos
+                      ? "Calculando…"
+                      : !gananciaPedido || gananciaPedido.lineasConCosto === 0
+                        ? "Sin costo registrado"
+                        : `${gananciaPedido.ganancia >= 0 ? "+" : ""}${formatCOP(gananciaPedido.ganancia)}${
+                            gananciaPedido.margenPct !== null
+                              ? ` (${gananciaPedido.margenPct.toLocaleString("es-CO", { maximumFractionDigits: 1 })}%)`
+                              : ""
+                          }`}
+              </span>
+              {mostrarGanancia &&
+                gananciaPedido &&
+                gananciaPedido.lineasConCosto > 0 &&
+                gananciaPedido.lineasSinCosto > 0 && (
+                  <small className="order-profit-note">
+                    Falta costo en {gananciaPedido.lineasSinCosto} ref.
+                  </small>
+                )}
+            </div>
+            <button
+              type="button"
+              className="order-profit-toggle"
+              aria-label={
+                mostrarGanancia
+                  ? "Ocultar ganancia del pedido"
+                  : "Mostrar ganancia del pedido"
+              }
+              onClick={() => setMostrarGanancia((v) => !v)}
+            >
+              {mostrarGanancia ? <EyeOff size={14} /> : <Eye size={14} />}
+              <span>{mostrarGanancia ? "Ocultar" : "Ver"}</span>
+            </button>
+          </div>
+        )}
         {!cliente ? (
           <p>Selecciona un cliente para consultar sus precios.</p>
         ) : precios.loading ? (

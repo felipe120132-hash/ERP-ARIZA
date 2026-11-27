@@ -3045,11 +3045,59 @@ body {
   line-height: 1.45;
   color: #356285;
 }
-.order-subtotal button {
+.order-subtotal > button {
   margin-top: 6px;
   height: 32px;
   font-size: 11px;
   color: #0066cc;
+}
+.order-profit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #c5dff3;
+  border-radius: 8px;
+}
+.order-profit-value {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #083e6b;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.order-profit-value.profit-positive {
+  color: #1f7240;
+}
+.order-profit-value.profit-negative {
+  color: #bd3441;
+}
+.order-profit-note {
+  font-size: 10px !important;
+  color: #6b7f92 !important;
+  font-weight: 500 !important;
+  margin-top: 2px;
+}
+.order-profit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid #b8d8f2;
+  background: #ebf5fe;
+  color: #0b4a7d;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.order-profit-toggle:hover {
+  background: #d8ecfc;
 }
 .order-cart > button[data-slot="button"]:not([data-variant="ghost"]) {
   height: 38px;
