@@ -201,8 +201,10 @@ export default function KardexPage() {
               <tbody>
                 {rows.map((x) => (
                   <tr key={x.id}>
-                    <td>{x.created_at.toLocaleString("es-CO")}</td>
-                    <td>
+                    <td className="rentabilidad-card-head">
+                      <strong>{x.created_at.toLocaleString("es-CO")}</strong>
+                    </td>
+                    <td data-label="Movimiento">
                       <span
                         className={`movement-type ${x.tipo_movimiento.toLowerCase()}`}
                       >
@@ -213,16 +215,16 @@ export default function KardexPage() {
                             : "Ajuste"}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Cantidad">
                       {x.tipo_movimiento === "AJUSTE" && x.cantidad > 0
                         ? "+"
                         : ""}
                       {x.cantidad.toLocaleString("es-CO")}
                     </td>
-                    <td className="balance-cell">
+                    <td className="balance-cell" data-label="Stock resultante">
                       {x.stock_resultante.toLocaleString("es-CO")}
                     </td>
-                    <td>
+                    <td data-label="Referencia">
                       {x.remision_id ? (
                         <Link
                           className="ledger-link"
@@ -234,7 +236,9 @@ export default function KardexPage() {
                         "Sin remisión asociada"
                       )}
                     </td>
-                    <td>{x.observacion ?? "Sin observación"}</td>
+                    <td className="rentabilidad-card-actions" data-label="Observación">
+                      {x.observacion ?? "Sin observación"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

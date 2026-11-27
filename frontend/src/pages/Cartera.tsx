@@ -240,29 +240,29 @@ export default function Cartera() {
                 <tbody>
                   {filtered.slice((page - 1) * 15, page * 15).map((x) => (
                     <tr key={x.id}>
-                      <td>
+                      <td className="rentabilidad-card-head">
                         <strong>{x.nombre_tienda}</strong>
                         <small>
                           {x.contacto ?? "Sin contacto"}
                           {!x.activo ? " · Inactivo" : ""}
                         </small>
                       </td>
-                      <td>
+                      <td data-label="Tipo">
                         {x.tipo_cliente === "TIENDA"
                           ? "Tienda"
                           : "Distribuidor"}
                       </td>
-                      <td className="balance-cell">
+                      <td className="balance-cell" data-label="Saldo">
                         {formatCOP(x.saldo_cartera)}
                       </td>
-                      <td>
+                      <td data-label="Mora">
                         <span
                           className={`remision-status ${x.en_mora ? "pendiente" : "pagada"}`}
                         >
                           {x.en_mora ? "En mora" : "Sin marca de mora"}
                         </span>
                       </td>
-                      <td>
+                      <td className="rentabilidad-card-actions">
                         <div className="client-actions">
                           <Button asChild variant="outline" size="sm">
                             <Link

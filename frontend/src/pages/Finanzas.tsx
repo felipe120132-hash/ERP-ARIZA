@@ -259,7 +259,7 @@ function FinanzasAdmin() {
         ) : (
           <>
             <div className="order-table-wrap">
-              <table className="order-table">
+              <table className="order-table finance-table">
                 <thead>
                   <tr>
                     <th>Concepto</th>
@@ -275,7 +275,7 @@ function FinanzasAdmin() {
                     .slice((visiblePage - 1) * 15, visiblePage * 15)
                     .map((x) => (
                       <tr key={x.id}>
-                        <td>
+                        <td className="rentabilidad-card-head">
                           <strong>{x.concepto}</strong>
                           {auditMap[x.id] && (
                             <div className="catalog-footnote">
@@ -284,11 +284,11 @@ function FinanzasAdmin() {
                             </div>
                           )}
                         </td>
-                        <td>{x.categoria}</td>
-                        <td>{x.recurrente ? "Recurrente" : "Puntual"}</td>
-                        <td>{x.created_at.toLocaleDateString("es-CO")}</td>
-                        <td className="balance-cell">{formatCOP(x.monto)}</td>
-                        <td>
+                        <td data-label="Categoría">{x.categoria}</td>
+                        <td data-label="Tipo">{x.recurrente ? "Recurrente" : "Puntual"}</td>
+                        <td data-label="Fecha de registro">{x.created_at.toLocaleDateString("es-CO")}</td>
+                        <td className="balance-cell" data-label="Monto">{formatCOP(x.monto)}</td>
+                        <td className="rentabilidad-card-actions">
                           <div className="order-actions">
                             <Button
                               type="button"

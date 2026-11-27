@@ -3924,20 +3924,40 @@ body {
   }
 }
 @media (max-width: 760px) {
-  .rentabilidad-table {
+  .rentabilidad-table,
+  .inventory-table,
+  .cartera-table,
+  .kardex-table,
+  .finance-table,
+  .product-admin-list .order-table {
     min-width: 0 !important;
     width: 100% !important;
     display: block;
   }
-  .rentabilidad-table thead {
+  .rentabilidad-table thead,
+  .inventory-table thead,
+  .cartera-table thead,
+  .kardex-table thead,
+  .finance-table thead,
+  .product-admin-list .order-table thead {
     display: none;
   }
-  .rentabilidad-table tbody {
+  .rentabilidad-table tbody,
+  .inventory-table tbody,
+  .cartera-table tbody,
+  .kardex-table tbody,
+  .finance-table tbody,
+  .product-admin-list .order-table tbody {
     display: grid;
     gap: 12px;
     padding: 6px 14px 16px;
   }
-  .rentabilidad-table tbody tr {
+  .rentabilidad-table tbody tr,
+  .inventory-table tbody tr,
+  .cartera-table tbody tr,
+  .kardex-table tbody tr,
+  .finance-table tbody tr,
+  .product-admin-list .order-table tbody tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px 14px;
@@ -3948,21 +3968,41 @@ body {
     box-shadow: 0 4px 14px #1249760a;
     align-items: start;
   }
-  .rentabilidad-table tbody tr:hover td {
+  .rentabilidad-table tbody tr:hover td,
+  .inventory-table tbody tr:hover td,
+  .cartera-table tbody tr:hover td,
+  .kardex-table tbody tr:hover td,
+  .finance-table tbody tr:hover td,
+  .product-admin-list .order-table tbody tr:hover td {
     background: transparent;
   }
-  .rentabilidad-table tbody td {
+  .rentabilidad-table tbody td,
+  .inventory-table tbody td,
+  .cartera-table tbody td,
+  .kardex-table tbody td,
+  .finance-table tbody td,
+  .product-admin-list .order-table tbody td {
     padding: 0 !important;
     border: 0 !important;
     min-width: 0;
   }
-  .rentabilidad-table tbody td.rentabilidad-card-head {
+  .rentabilidad-table tbody td.rentabilidad-card-head,
+  .inventory-table tbody td.rentabilidad-card-head,
+  .cartera-table tbody td.rentabilidad-card-head,
+  .kardex-table tbody td.rentabilidad-card-head,
+  .finance-table tbody td.rentabilidad-card-head,
+  .product-admin-list .order-table tbody td.rentabilidad-card-head {
     grid-column: 1 / -1;
     padding-bottom: 10px !important;
     border-bottom: 1px solid #eaf1f7 !important;
     font-size: 15px;
   }
-  .rentabilidad-table tbody td[data-label]::before {
+  .rentabilidad-table tbody td[data-label]::before,
+  .inventory-table tbody td[data-label]::before,
+  .cartera-table tbody td[data-label]::before,
+  .kardex-table tbody td[data-label]::before,
+  .finance-table tbody td[data-label]::before,
+  .product-admin-list .order-table tbody td[data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 11px;
@@ -3970,13 +4010,32 @@ body {
     color: #54738b;
     margin-bottom: 4px;
   }
-  .rentabilidad-table tbody td.rentabilidad-card-actions {
+  .rentabilidad-table tbody td.rentabilidad-card-actions,
+  .inventory-table tbody td.rentabilidad-card-actions,
+  .cartera-table tbody td.rentabilidad-card-actions,
+  .kardex-table tbody td.rentabilidad-card-actions,
+  .finance-table tbody td.rentabilidad-card-actions,
+  .product-admin-list .order-table tbody td.rentabilidad-card-actions {
     grid-column: 1 / -1;
     padding-top: 10px !important;
     border-top: 1px solid #eaf1f7 !important;
   }
-  .rentabilidad-table tbody td.rentabilidad-card-actions button {
+  .rentabilidad-table tbody td.rentabilidad-card-actions > button {
     width: 100%;
+    justify-content: center;
+  }
+  .inventory-table tbody td.rentabilidad-card-actions .receipt-tools,
+  .cartera-table tbody td.rentabilidad-card-actions .client-actions,
+  .finance-table tbody td.rentabilidad-card-actions .order-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+  .inventory-table tbody td.rentabilidad-card-actions .receipt-tools > *,
+  .cartera-table tbody td.rentabilidad-card-actions .client-actions > *,
+  .finance-table tbody td.rentabilidad-card-actions .order-actions > * {
+    flex: 1 1 120px;
     justify-content: center;
   }
 }
@@ -3988,7 +4047,12 @@ body {
   }
 }
 @media (max-width: 390px) {
-  .rentabilidad-table tbody tr {
+  .rentabilidad-table tbody tr,
+  .inventory-table tbody tr,
+  .cartera-table tbody tr,
+  .kardex-table tbody tr,
+  .finance-table tbody tr,
+  .product-admin-list .order-table tbody tr {
     grid-template-columns: minmax(0, 1fr);
   }
 }

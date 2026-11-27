@@ -227,23 +227,23 @@ function Listado() {
                 <tbody>
                   {filtered.slice((current - 1) * 15, current * 15).map((p) => (
                     <tr key={p.id}>
-                      <td>
+                      <td className="rentabilidad-card-head">
                         <strong>{p.nombre}</strong>
                         <small className="product-row-meta">
                           {p.sku} · {p.categoria}
                         </small>
                       </td>
-                      <td>{formatCOP(p.precio_tienda)}</td>
-                      <td>{formatCOP(p.precio_distribuidor)}</td>
-                      <td>{p.stock_actual}</td>
-                      <td>
+                      <td data-label="Precio tienda">{formatCOP(p.precio_tienda)}</td>
+                      <td data-label="Distribuidor">{formatCOP(p.precio_distribuidor)}</td>
+                      <td data-label="Existencias">{p.stock_actual}</td>
+                      <td data-label="Estado">
                         <span
                           className={`product-activity ${p.activo ? "active" : "inactive"}`}
                         >
                           {p.activo ? "Activo" : "Inactivo"}
                         </span>
                       </td>
-                      <td>
+                      <td className="rentabilidad-card-actions">
                         {confirmDeleteId === p.id ? (
                           <div className="receipt-tools table-action-group">
                             <Button

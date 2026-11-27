@@ -267,19 +267,19 @@ export default function Inventario() {
                 <tbody>
                   {filtered.slice((page - 1) * 15, page * 15).map((x) => (
                     <tr key={x.id}>
-                      <td>
+                      <td className="rentabilidad-card-head">
                         <strong>{x.nombre}</strong>
                         <small>
                           {x.sku} · {x.categoria}
                           {!x.activo ? " · Inactivo" : ""}
                         </small>
                       </td>
-                      <td>{x.origen ?? "Sin especificar"}</td>
-                      <td className="balance-cell">
+                      <td data-label="Origen">{x.origen ?? "Sin especificar"}</td>
+                      <td className="balance-cell" data-label="Existencias">
                         {x.stock_actual.toLocaleString("es-CO")}
                       </td>
-                      <td>{x.stock_minimo.toLocaleString("es-CO")}</td>
-                      <td>
+                      <td data-label="Mínimo">{x.stock_minimo.toLocaleString("es-CO")}</td>
+                      <td data-label="Estado">
                         <span
                           className={`inventory-state ${(map.get(x.id) ?? "").toLowerCase()}`}
                         >
@@ -289,7 +289,7 @@ export default function Inventario() {
                             : "Sin estado disponible"}
                         </span>
                       </td>
-                      <td>
+                      <td className="rentabilidad-card-actions">
                         <div className="receipt-tools">
                           <Button asChild variant="outline" size="sm">
                             <Link

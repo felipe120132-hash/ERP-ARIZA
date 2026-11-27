@@ -346,8 +346,8 @@ export default function Carrito({
                     <Input
                       id={`qty-${line.producto.id}`}
                       type="number"
-                      min="0.01"
-                      step="0.01"
+                      min="1"
+                      step="1"
                       max={product?.stock_actual}
                       value={line.cantidad}
                       onChange={(e) => {
