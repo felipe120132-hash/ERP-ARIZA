@@ -34,9 +34,13 @@ function isUncertainUploadError(message: string): boolean {
 export default function AccionesRemision({
   remision,
   onUpdated,
+  autoSaveOneDrive = false,
+  onAutoSaveConsumed,
 }: {
   remision: Remision;
   onUpdated: () => void;
+  autoSaveOneDrive?: boolean;
+  onAutoSaveConsumed?: () => void;
 }) {
   const { user, perfil } = useAuth();
   const isAdmin = perfil?.rol === "ADMIN";
@@ -51,6 +55,24 @@ export default function AccionesRemision({
     ),
     [cancel, setCancel] = useState(false);
   const lock = useRef(false);
+  const autoTriggered = useRef(false);
+
+  useEffect(() => {
+    if (
+      !autoSaveOneDrive ||
+      autoTriggered.current ||
+      !isAdmin ||
+      !draftKey ||
+      remision.pdf_url ||
+      remision.estado === "ANULADA"
+    ) {
+      return;
+    }
+    autoTriggered.current = true;
+    onAutoSaveConsumed?.();
+    void guardarEnOneDrive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaveOneDrive, isAdmin, draftKey, remision.id, remision.pdf_url, remision.estado]);
 
   useEffect(() => {
     if (!isAdmin || !draftKey) return;

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch as SwitchPrimitive } from "radix-ui";
 import { clientesService } from "@/services/clientesService";
+import { useAuth } from "@/context/AuthContext";
 import { usePedido } from "@/context/PedidoContext";
 import { normalize } from "@/lib/catalog";
 import type { Cliente, Producto } from "@/types/schemas";
@@ -21,6 +22,9 @@ export default function Carrito({
   loading: boolean;
   onCreated: () => void;
 }) {
+  const { user, perfil } = useAuth();
+  const isAdmin = perfil?.rol === "ADMIN";
+  const autoOneDriveKey = user ? `ariza:auto-onedrive:${user.id}` : "";
   const pedido = usePedido(),
     navigate = useNavigate();
   const [clientes, setClientes] = useState<Cliente[]>([]),
@@ -28,7 +32,15 @@ export default function Carrito({
     [error, setError] = useState<string | null>(null),
     [cargando, setCargando] = useState(true),
     [attempt, setAttempt] = useState(0),
-    [review, setReview] = useState(false);
+    [review, setReview] = useState(false),
+    [autoOneDrive, setAutoOneDrive] = useState<boolean>(() => {
+      if (!autoOneDriveKey) return false;
+      try {
+        return localStorage.getItem(autoOneDriveKey) === "1";
+      } catch {
+        return false;
+      }
+    });
   useEffect(() => {
     let active = true;
     setCargando(true);
@@ -248,6 +260,28 @@ export default function Carrito({
             <SwitchPrimitive.Thumb />
           </SwitchPrimitive.Root>
         </div>
+        {isAdmin && (
+          <div className="order-iva">
+            <Label htmlFor="auto-onedrive">Guardar PDF en OneDrive</Label>
+            <SwitchPrimitive.Root
+              id="auto-onedrive"
+              checked={autoOneDrive}
+              onCheckedChange={(value) => {
+                setAutoOneDrive(value);
+                if (autoOneDriveKey) {
+                  try {
+                    localStorage.setItem(autoOneDriveKey, value ? "1" : "0");
+                  } catch {
+                    // Ignorar errores de almacenamiento local
+                  }
+                }
+              }}
+              className="iva-switch"
+            >
+              <SwitchPrimitive.Thumb />
+            </SwitchPrimitive.Root>
+          </div>
+        )}
       </fieldset>
       <div
         className="order-subtotal"
@@ -318,8 +352,11 @@ export default function Carrito({
               <p>
                 {cliente?.nombre_tienda} · {pedido.lineas.length} referencias ·{" "}
                 {pedido.pago === "CONTADO" ? "Contado" : "Crédito"} ·{" "}
-                {pedido.iva ? "Con IVA" : "Sin IVA"}. Al confirmar se descontará
-                el stock
+                {pedido.iva ? "Con IVA" : "Sin IVA"}
+                {isAdmin && autoOneDrive
+                  ? " · Guardado automático en OneDrive"
+                  : ""}
+                . Al confirmar se descontará el stock
                 {pedido.pago === "CREDITO"
                   ? " y se actualizará la cartera"
                   : ""}
@@ -339,7 +376,12 @@ export default function Carrito({
               setReview(false);
               if (id) {
                 onCreated();
-                navigate(`/remisiones/${id}`);
+                navigate(`/remisiones/${id}`, {
+                  state:
+                    isAdmin && autoOneDrive
+                      ? { autoGuardarOneDrive: true }
+                      : undefined,
+                });
               }
             }}
           >

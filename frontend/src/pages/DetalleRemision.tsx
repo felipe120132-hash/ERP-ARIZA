@@ -1,6 +1,6 @@
 import AccionesRemision from "@/components/remisiones/AccionesRemision";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { remisionesService } from "@/services/remisionesService";
@@ -17,7 +17,12 @@ const money = (value: number) =>
   }).format(value);
 export default function DetalleRemisionPage() {
   const { id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const pedido = usePedido();
+  const autoSaveOneDrive =
+    (location.state as { autoGuardarOneDrive?: boolean } | null)
+      ?.autoGuardarOneDrive === true;
   const [remision, setRemision] = useState<Remision | null>(null),
     [lines, setLines] = useState<DetalleRemision[]>([]),
     [names, setNames] = useState<Record<string, string>>({}),
@@ -136,6 +141,10 @@ export default function DetalleRemisionPage() {
             <AccionesRemision
               key={remision.id}
               remision={remision}
+              autoSaveOneDrive={autoSaveOneDrive}
+              onAutoSaveConsumed={() =>
+                navigate(location.pathname, { replace: true, state: null })
+              }
               onUpdated={() => setAttempt((x) => x + 1)}
             />
             <div className="receipt-meta">
